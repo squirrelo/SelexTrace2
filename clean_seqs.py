@@ -5,20 +5,8 @@ from cogent.parse.fasta import MinimalFastaParser
 from cogent.parse.fastq import MinimalFastqParser
 from time import time
 import argparse
-from selextrace.stutils import write_fasta_list, strip_primer,\
-    remove_duplicates
-
-def rem_N_short(seqs, minlen=1):
-    '''Takes in a [(header, seq)] formatted list of sequences and returns list 
-    with sequences containing Ns or shorter than minlen removed'''
-    rem = []
-    for i, seq in enumerate(seqs):
-        if "N" in seq[1].upper() or len(seq[1]) < minlen:
-            rem.append(i)
-    rem.sort(reverse=True)
-    for i in rem:
-        seqs.pop(i)
-    return seqs
+from selextrace.stutils import (write_fasta_list, strip_primer,
+                                remove_duplicates, rem_N_short)
 
 
 if __name__ == "__main__":
@@ -29,13 +17,14 @@ if __name__ == "__main__":
     sequence to strip")
     #parser.add_argument('-sp', default="", help="5' primer \
     #sequence to strip")
-    parser.add_argument('-o', default = "", help="Output folder (default same as input)")
-    parser.add_argument('-l', default = 1, type=int, help="minimum length of \
-    sequence to keep (default 1)")
-    parser.add_argument('-d', default = 1, type=int, help="minimum number of duplicates\
-    needed to keep (default 1)")
-    parser.add_argument('-q', action='store_true', default = False, help="Input is fastq format \
-    (default fasta)")
+    parser.add_argument('-o', default="",
+                        help="Output folder (default same as input)")
+    parser.add_argument('-l', default=1, type=int,
+                        help="min length of sequence to keep (default 1)")
+    parser.add_argument('-d', default=1, type=int,
+                        help="min # of duplicates needed to keep (default 1)")
+    parser.add_argument('-q', action='store_true', default=False,
+                        help="Input is fastq format (default fasta)")
 
     args = parser.parse_args()
     if args.l < 1:
@@ -67,7 +56,7 @@ if __name__ == "__main__":
     for filein in walk(folderin).next()[2]:
         fext = splitext(filein)[1]
         #skip if not fastq or fasta file
-        if fext != ".fastq" and fext != ".fasta" and fext != ".fas" and fext != ".fna":
+        if fext not in (".fastq", ".fq", ".fasta", ".fas", ".fna"):
             continue
 
         basename = splitext(filein)[0]
@@ -79,17 +68,17 @@ if __name__ == "__main__":
             print "Round", basename, "already cleaned"
             continue
 
-        currfolder = folderout + basename + "/" + basename
+        currfolder = ''.join([folderout, basename, "/", basename])
         print "==ROUND " + basename + "=="
         #convert fastq to fasta if needed
         if args.q:
             print "==Converting to FASTA=="
-            f = open(folderout + basename + ".fasta", 'w')
+            f = open(''.join([folderout, basename, ".fasta"]), 'w')
             for header, seq, qual in MinimalFastqParser(folderin+filein,
                                                         strict=False):
                 f.write(''.join([">", header, '\n', seq, '\n']))
             f.close()
-            filein = folderout + basename + ".fasta"
+            filein = ''.join([folderout, basename, ".fasta"])
 
         print "==Cleaning input sequences=="
 
@@ -108,15 +97,17 @@ if __name__ == "__main__":
         log.write(str(len(seqs)) + "starting sequences\n")
         #strip primers from sequences, print out not stripped to be safe
         #allowing up to 2 mismatches in the primer
-        if args.ep != '': #or args.sp != '':
+        if args.ep != '':  # or args.sp != '':
             print "Primer stripping"
             secs = time()
-            kept, rem = strip_primer(seqs, args.ep, maxmismatch=2, 
+            kept, rem = strip_primer(seqs, args.ep, maxmismatch=2,
                 keep_primer=True)
             del seqs
-            log.write("Primer stripping\n" + str(len(kept)) + " sequences left\n")
-            print str(len(kept)) + " sequences left, " + \
-            str(len(rem)) + " sequences removed. " + str((time() - secs)/60) + " minutes"
+            log.write(''.join(["Primer stripping\n", str(len(kept)),
+                               " sequences left\n"]))
+            print ' '.join([str(len(kept)), "sequences left,", str(len(rem)),
+                            "sequences removed.", str((time() - secs)/60),
+                            "minutes"])
             write_fasta_list(kept, currfolder + "-Stripped.fasta")
             write_fasta_list(rem, currfolder + "-NotStripped.fasta")
             del rem
@@ -127,8 +118,10 @@ if __name__ == "__main__":
         print "Remove short and ambiguous sequences"
         secs = time()
         kept = rem_N_short(kept, args.l)
-        log.write("Remove short and ambiguous sequences\n" + str(len(kept)) + " sequences left\n")
-        print str(len(kept)) + " sequences left. " + str((time() - secs)/60) + " minutes"
+        log.write(''.join(["Remove short and ambiguous sequences\n",
+                           str(len(kept)), " sequences left\n"]))
+        print ' '.join([str(len(kept)), "sequences left.",
+                        str((time() - secs)/60), " minutes"])
         write_fasta_list(kept, currfolder + "-CleanStripped.fasta")
 
         #remove duplicate sequences from the fasta file and store for later
@@ -150,6 +143,8 @@ if __name__ == "__main__":
             count = str(seqinfo[1])
             fout.write('>seq%s count:%s\n%s\n' % (str(num), count, seq))
         fout.close()
-        log.write("Remove duplicates\n" + str(len(kept)) + " sequences left")
-        print str(len(kept)) + " sequences left. " + str((time() - secs)/60) + " minutes\n"
+        log.write(''.join(["Remove duplicates\n", str(len(kept)),
+                           " sequences left"]))
+        print ' '.join([str(len(kept)), "sequences left.",
+                        str((time() - secs)/60), "minutes\n"])
         log.close()

@@ -35,8 +35,7 @@ def strip_primer(seqs, primer, maxmismatch=0, keep_primer=False):
             seq = seq.replace('U', 'T')
             RNA = True
         #code adapted from truncate_reverse_primers.py in qiime
-        rev_primer_mm, rev_primer_index =\
-            local_align_primer_seq(pri, seq)
+        rev_primer_mm, rev_primer_index = local_align_primer_seq(pri, seq)
         if rev_primer_mm > maxmismatch:
             nostripped.append((head, seq))
             continue
@@ -49,6 +48,19 @@ def strip_primer(seqs, primer, maxmismatch=0, keep_primer=False):
         stripped.append((head, seqnew))
     #end for
     return stripped, nostripped
+
+
+def rem_N_short(seqs, minlen=1):
+    '''Takes in a [(header, seq)] formatted list of sequences and returns list
+    with sequences containing Ns or shorter than minlen removed'''
+    rem = []
+    for i, seq in enumerate(seqs):
+        if "N" in seq[1].upper() or len(seq[1]) < minlen:
+            rem.append(i)
+    rem.sort(reverse=True)
+    for i in rem:
+        seqs.pop(i)
+    return seqs
 
 
 def cluster_seqs(seqspath, simm, folderout='/tmp', gapopen=None, gapext=None):

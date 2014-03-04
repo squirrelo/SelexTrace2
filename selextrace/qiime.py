@@ -20,14 +20,12 @@ __license__ = "GPL"
 __version__ = "1.8.0-dev"
 __maintainer__ = "William Walters"
 __email__ = "rob@spot.colorado.edu, william.a.walters@colorado.edu"
-from cogent import LoadSeqs, RNA
+from cogent import LoadSeqs, DNA
 from cogent.align.align import make_dna_scoring_dict, local_pairwise
 from cogent.core.moltype import IUPAC_DNA_ambiguities
 
-equality_scorer_ambigs = MatchScorerAmbigs(1, -1)
 
-
-def pair_hmm_align_unaligned_seqs(seqs, moltype=RNA, params={}):
+def pair_hmm_align_unaligned_seqs(seqs, moltype=DNA, params={}):
     """
         Checks parameters for pairwise alignment, returns alignment.
 
@@ -57,6 +55,51 @@ def pair_hmm_align_unaligned_seqs(seqs, moltype=RNA, params={}):
 
     return local_pairwise(s1, s2, score_matrix, gap_open, gap_extend)
 
+
+def MatchScorerAmbigs(match, mismatch, matches=None):
+    """ Alternative scorer factory for sw_align which allows match to ambiguous chars
+
+    It allows for matching to ambiguous characters which is useful for
+     primer/sequence matching. Not sure what should happen with gaps, but they
+     shouldn't be passed to this function anyway. Currently a gap will only match
+     a gap.
+
+    match and mismatch should both be numbers. Typically, match should be
+    positive and mismatch should be negative.
+
+    Resulting function has signature f(x,y) -> number.
+
+    Code original from Greg Caporaso
+    """
+
+    matches = matches or \
+        {'A': {'A': None}, 'G': {'G': None}, 'C': {'C': None},
+         'T': {'T': None}, '-': {'-': None}}
+    for ambig, chars in IUPAC_DNA_ambiguities.items():
+        try:
+            matches[ambig].update({}.fromkeys(chars))
+        except KeyError:
+            matches[ambig] = {}.fromkeys(chars)
+
+        for char in chars:
+            try:
+                matches[char].update({ambig: None})
+            except KeyError:
+                matches[char] = {ambig: None}
+
+    def scorer(x, y):
+        # need a better way to disallow unknown characters (could
+        # try/except for a KeyError on the next step, but that would only
+        # test one of the characters)
+        if x not in matches or y not in matches:
+            raise ValueError("Unknown character: %s or %s" % (x, y))
+        if y in matches[x]:
+            return match
+        else:
+            return mismatch
+    return scorer
+
+equality_scorer_ambigs = MatchScorerAmbigs(1, -1)
 
 def local_align_primer_seq(primer, sequence, sw_scorer=equality_scorer_ambigs):
     """Perform local alignment of primer and sequence
@@ -104,47 +147,3 @@ def local_align_primer_seq(primer, sequence, sw_scorer=equality_scorer_ambigs):
     mismatch_count = insertions + deletions + mismatches
 
     return mismatch_count, hit_start
-
-
-def MatchScorerAmbigs(match, mismatch, matches=None):
-    """ Alternative scorer factory for sw_align which allows match to ambiguous chars
-
-    It allows for matching to ambiguous characters which is useful for
-     primer/sequence matching. Not sure what should happen with gaps, but they
-     shouldn't be passed to this function anyway. Currently a gap will only match
-     a gap.
-
-    match and mismatch should both be numbers. Typically, match should be
-    positive and mismatch should be negative.
-
-    Resulting function has signature f(x,y) -> number.
-
-    Code original from Greg Caporaso
-    """
-
-    matches = matches or \
-        {'A': {'A': None}, 'G': {'G': None}, 'C': {'C': None},
-         'T': {'T': None}, '-': {'-': None}}
-    for ambig, chars in IUPAC_DNA_ambiguities.items():
-        try:
-            matches[ambig].update({}.fromkeys(chars))
-        except KeyError:
-            matches[ambig] = {}.fromkeys(chars)
-
-        for char in chars:
-            try:
-                matches[char].update({ambig: None})
-            except KeyError:
-                matches[char] = {ambig: None}
-
-    def scorer(x, y):
-        # need a better way to disallow unknown characters (could
-        # try/except for a KeyError on the next step, but that would only
-        # test one of the characters)
-        if x not in matches or y not in matches:
-            raise ValueError("Unknown character: %s or %s" % (x, y))
-        if y in matches[x]:
-            return match
-        else:
-            return mismatch
-    return scorer
