@@ -251,7 +251,7 @@ if __name__ == "__main__":
     for fam in groups:
         fout.write("\t".join(groups[fam]) + "\n")
     fout.close()
-    print len(groups), "final groups"
+    print len(groups), "final families"
     print "Runtime: " + str((time() - secs) / 3600) + " hrs"
     groups.clear()
     del groups

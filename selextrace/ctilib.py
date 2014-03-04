@@ -5,6 +5,7 @@ from subprocess import Popen, PIPE
 from math import ceil
 from random import shuffle
 from multiprocessing import Pool, Manager
+from traceback import format_exc
 
 from cogent import LoadSeqs, RNA
 from cogent.core.sequence import RnaSequence
@@ -197,6 +198,7 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
     return dict(groupstruct), list(nogroup)
 
 def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
+    #takes in list of seqstructure objects for nonref and ref
     try:
         denovo = True
         #if ref list is pased, know we are refrence grouping
@@ -208,6 +210,8 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
             nogroup = []
         #loop through all nonreference items
         for pos, currnonref in enumerate(nonref):
+            if isinstance(currnonref, str):
+                print currnonref
             seq1 = RnaSequence(currnonref.seq.replace("-",""))
             bestref = ""
             bestscore = minscore
@@ -219,24 +223,23 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
                 seq2 = RnaSequence(seq)
                 #get alignment score and add to seq/struct score
                 aln, alnsc = classic_align_pairwise(seq1, seq2, alnscores, -1,
-                                                    -1, False, return_score=True)
-                aln
+                                                    -1, False, 
+                                                    return_score=True)
                 #score is normalized by dividing each score by sequence length
                 #then adding. This should keep scores between zero and two
                 score = (alnsc/len(aln) + currnonref.score_seq(seq))
                 if score >= bestscore:
                     bestscore = score
                     bestref = teststruct.struct
-
             if bestref != "":
                 if bestref not in groupstruct:
                     groupstruct[bestref] = [currnonref.struct]
                 else:
                     groupstruct[bestref].append(currnonref.struct)
             else:
-                nogroup.append(currnonref.struct)
+                nogroup.append(currnonref)
     except Exception, e:
-        print "GROUP: ", str(e)
+        print "GROUP: ", format_exc()
     return groupstruct, nogroup
 
 
@@ -269,6 +272,7 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
         #create SeqStructures objects for items we are clustering
         #just de-novo group if 20 or less to save time and effort
         if len(grouping) <= 20:
+            print ">20"
             grouped, ungrouped = group(grouping, structscore)
             for ug in ungrouped:
                 grouped[ug] = []
@@ -278,22 +282,20 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
         finishlen = int(ceil(len(grouping) * setpercent))
         if finishlen < 10:
             finishlen = 10
-        #do initial ref grab by either all structures or specific ones passed
-        ref, nonref = build_reference(grouping, finishlen)
-        startungrouped = 0
-        grouped, ungrouped = group_to_reference(ref, nonref, structscore,
-                                                cpus=cpus)
-        endungrouped = len(grouped)
+        startgrouped = 0
+        endgrouped = 1
+        grouped = {}
+        ungrouped = grouping
         # keep refining while not at limit and are still grouping structs
-        while (len(grouping) - len(ungrouped) > finishlen and
-               startungrouped != endungrouped):
-            startungrouped = len(grouped)
+        while (len(grouping) - len(grouped) > finishlen and
+               startgrouped != endgrouped):
+            startgrouped = len(grouped)
             ref, nonref = build_reference(ungrouped, finishlen)
-            g, ungrouped = group_to_reference(ref, nonref, structscore,
-                                              cpus=cpus)
+            g, ungrouped = group_to_reference(ref, nonref, structscore, cpus)
             grouped.update(g)
-            endungrouped = len(grouped)
+            endgrouped = len(grouped)
         #do the last grouping
+        print "final!"
         g, ungrouped = group(ungrouped, structscore)
         grouped.update(g)
         #add ungroupable bit to end
