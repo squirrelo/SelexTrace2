@@ -197,43 +197,46 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
     return dict(groupstruct), list(nogroup)
 
 def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
-    denovo = True
-    #if ref list is pased, know we are refrence grouping
-    if ref is not None:
-        denovo = False
-    if groupstruct is None:
-        groupstruct = {}
-    if nogroup is None:
-        nogroup = []
-    #loop through all nonreference items
-    for pos, currnonref in enumerate(nonref):
-        seq1 = RnaSequence(currnonref.seq.replace("-",""))
-        bestref = ""
-        bestscore = minscore
-        if denovo:
-            ref = nonref[pos+1:]
-        #compare to each reference item
-        for teststruct in ref:
-            seq = teststruct.seq.replace("-","")
-            seq2 = RnaSequence(seq)
-            #get alignment score and add to seq/struct score
-            aln, alnsc = classic_align_pairwise(seq1, seq2, alnscores, -1,
-                                                -1, False, return_score=True)
-            aln
-            #score is normalized by dividing each score by sequence length
-            #then adding. This should keep scores between zero and two
-            score = (alnsc/len(aln) + currnonref.score_seq(seq))
-            if score >= bestscore:
-                bestscore = score
-                bestref = teststruct.struct
+    try:
+        denovo = True
+        #if ref list is pased, know we are refrence grouping
+        if ref is not None:
+            denovo = False
+        if groupstruct is None:
+            groupstruct = {}
+        if nogroup is None:
+            nogroup = []
+        #loop through all nonreference items
+        for pos, currnonref in enumerate(nonref):
+            seq1 = RnaSequence(currnonref.seq.replace("-",""))
+            bestref = ""
+            bestscore = minscore
+            if denovo:
+                ref = nonref[pos+1:]
+            #compare to each reference item
+            for teststruct in ref:
+                seq = teststruct.seq.replace("-","")
+                seq2 = RnaSequence(seq)
+                #get alignment score and add to seq/struct score
+                aln, alnsc = classic_align_pairwise(seq1, seq2, alnscores, -1,
+                                                    -1, False, return_score=True)
+                aln
+                #score is normalized by dividing each score by sequence length
+                #then adding. This should keep scores between zero and two
+                score = (alnsc/len(aln) + currnonref.score_seq(seq))
+                if score >= bestscore:
+                    bestscore = score
+                    bestref = teststruct.struct
 
-        if bestref != "":
-            if bestref not in groupstruct:
-                groupstruct[bestref] = [currnonref.struct]
+            if bestref != "":
+                if bestref not in groupstruct:
+                    groupstruct[bestref] = [currnonref.struct]
+                else:
+                    groupstruct[bestref].append(currnonref.struct)
             else:
-                groupstruct[bestref].append(currnonref.struct)
-        else:
-            nogroup.append(currnonref.struct)
+                nogroup.append(currnonref.struct)
+    except Exception, e:
+        print "GROUP: ", str(e)
     return groupstruct, nogroup
 
 
@@ -246,7 +249,7 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
             specstructs - a list of a subset of structures in structgroups
                           to cluster (optional)
             setpercent - Allows manual percentage setting for ref structures
-                           (default 2%  of dict)
+                           (default 1%  of dict)
         '''
         #fail if nothing to compare
         if len(structgroups) < 1:

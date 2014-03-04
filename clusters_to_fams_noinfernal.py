@@ -64,38 +64,42 @@ if __name__ == "__main__":
     print "==Clustering sequences by primary sequence=="
     clusters = {}
     secs = time()
-    if exists(outfolder + "clusters.txt"):
+    if exists(outfolder + "cluster_structs.fasta"):
+        #dont need to do anything since already folded by next step
+        print "Sequences previously clustered"
+        cin = open(outfolder + "clusters.txt")
+        numclusts = int(cin.readline().strip())
+        cin.close()
+    elif exists(outfolder + "clusters.txt"):
+        #already clustered but not folded, so read in clusters
         clustersin = open(outfolder + "clusters.txt")
+        numclusts = int(clustersin.readline().strip())
         currclust = ""
         for header, seq in MinimalFastaParser(clustersin):
             if "cluster_" in header:
-                #create SequenceCollection object out of sequences
-                clusters[currclust] = LoadSeqs(data=clusters[currclust],
-                                               moltype=RNA, aligned=False)
                 currclust = header
                 clusters[currclust] = []
             else:
                 clusters[currclust].append((header, seq))
         clustersin.close()
-        print "Sequences previously clustered,", len(clusters), "clusters"
+        print "Sequences previously clustered,", numclusts, "clusters"
     else:
         print "Running uclust over sequences"
         #cluster the initial sequences by sequence simmilarity
         clusters = cluster_seqs(args.i, args.sim, folderout=args.o,
                                 gapopen='10.0', gapext='10.0')
-        #turn clusters into SequenceCollection objects
-        for currclust in clusters:
-            clusters[currclust] = LoadSeqs(data=clusters[currclust],
-                                           moltype=RNA, aligned=False)
 
         #print that shit to file
-        cout = open(outfolder + "clusters.txt", 'w')
         hold = clusters.keys()
         hold.sort()
+        cout = open(outfolder + "clusters.txt", 'w')
+        cout.write(str(len(clusters)) + "\n")
         for cluster in hold:
             cout.write(">%s\n%s\n" % (cluster, cluster))
-            cout.write(hold[cluster].toFasta())
+            for header, seq in clusters[cluster]:
+                cout.write(">%s\n%s\n" % (header, seq))
         cout.close()
+        numclusts = len(clusters)
         print str(len(clusters)) + " clusters"
         print "Runtime: " + str((time() - secs)/60) + " min"
 
@@ -118,17 +122,36 @@ if __name__ == "__main__":
     else:
         print "Clusters previously folded"
 
-     #read in all structures now that they are folded
+     #read in all structures now that they are folded and aligned
     structgroups = {}
     count = 1
     cfo = open(outfolder + "cluster_structs.fasta", 'rU')
-    for header, struct in MinimalFastaParser(cfo):
+    #throw out first line (dont need cluster number), then read in currstruct
+    cfo.readline()
+    currstruct = cfo.readline().strip()
+    currseqs = []
+    for header, seq in MinimalFastaParser(cfo):
         if "cluster_" in header:
             count += 1
-            structgroups[struct] = clusters[header]
+            if currstruct not in structgroups:
+            #turn list of tuples into alignment object
+                structgroups[currstruct] = LoadSeqs(data=currseqs, moltype=RNA)
+            else:
+                aln = LoadSeqs(data=currseqs, moltype=RNA)
+                structgroups[currstruct] = structgroups[currstruct].addSeqs(aln)
+            #move on to next structgroup
+            currstruct = seq
+            currseqs = []
+        else:
+            currseqs.append((header, seq))
+    structgroups[currstruct] = LoadSeqs(data=currseqs, moltype=RNA)
     cfo.close()
+    del currseqs
+    for struct in structgroups:
+        if len(struct) != len(structgroups[struct]):
+            print struct
 
-    if count != len(clusters):
+    if count != numclusts:
         raise AssertionError(" ".join([str(count), "structures,",
                                        str(len(clusters)),
                                        "clusters. Not all clusters folded!"]))
