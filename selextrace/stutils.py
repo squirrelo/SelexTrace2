@@ -1,9 +1,9 @@
+from subprocess import Popen, PIPE
+from collections import Counter
 
 from cogent import LoadSeqs
 from cogent.app.uclust import Uclust, clusters_from_uc_file
-from subprocess import Popen, PIPE
-from qiime.split_libraries import local_align_primer_seq
-from collections import Counter
+from .qiime import local_align_primer_seq
 
 
 def write_fasta_list(lst, filename):
@@ -23,8 +23,8 @@ def write_fasta_dict(dct, filename):
 
 
 def strip_primer(seqs, primer, maxmismatch=0, keep_primer=False):
-    '''strips 3 prime primer from sequences in fasta file and returns MinimalFastaParser
-    formatted arrays for stripped and not stripped sequences'''
+    '''strips 3 prime primer from sequences in fasta file and returns arrays
+        for stripped and not stripped sequences'''
     nostripped = []
     stripped = []
     pri = primer.upper()
@@ -51,13 +51,13 @@ def strip_primer(seqs, primer, maxmismatch=0, keep_primer=False):
     return stripped, nostripped
 
 
-def cluster_seqs(seqspath, simmilarity, folderout='/tmp', gapopen=None, gapext=None):
+def cluster_seqs(seqspath, simm, folderout='/tmp', gapopen=None, gapext=None):
     if folderout[-1] != "/":
         folderout += "/"
 
     params = {
         '--usersort': False,
-        '--id': float(simmilarity),
+        '--id': float(simm),
         '--maxaccepts': 20,
         '--maxrejects': 500,
         '--stepwords': 20,

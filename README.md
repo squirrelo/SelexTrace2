@@ -11,14 +11,8 @@ Numpy 1.6
 
 Cogent 1.5.3 (With modified/added files included here)
 
-Qiime 1.5
-
 uclust 2.2
 
-infernal 1.1r2
+ViennaRNA package (including RNAForester) 2.0.7
 
-ViennaRNA package (RNAForester)
-
-BayesFold
-
-RNAShapes
+BayesFold 1.01

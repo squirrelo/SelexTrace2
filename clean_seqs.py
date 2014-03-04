@@ -85,7 +85,8 @@ if __name__ == "__main__":
         if args.q:
             print "==Converting to FASTA=="
             f = open(folderout + basename + ".fasta", 'w')
-            for header, seq, qual in MinimalFastqParser(folderin+filein, strict=False):
+            for header, seq, qual in MinimalFastqParser(folderin+filein,
+                                                        strict=False):
                 f.write(''.join([">", header, '\n', seq, '\n']))
             f.close()
             filein = folderout + basename + ".fasta"
@@ -94,10 +95,11 @@ if __name__ == "__main__":
 
         log = open(currfolder + "-cleanup.log", 'w')
         log.write(''.join(["====================\nFile in: ", folderin, filein,
-            "\nOutput Folder: ", currfolder, "\n3' primer: ", args.ep, 
-            "\nMin length: " + str(args.l), "\nMin duplicates: ", str(args.d), 
-            "\n====================\n"]))
-        #remove all underscores from headers during load for compatability reasons
+                           "\nOutput Folder: ", currfolder, "\n3' primer: ",
+                           args.ep, "\nMin length: ", str(args.l),
+                           "\nMin duplicates: ", str(args.d),
+                           "\n====================\n"]))
+        #parse in sequences as (header, seq) tuples
         seqs = []
         seqsin = open(folderin + filein, 'rU')
         for header, seq in MinimalFastaParser(seqsin):
