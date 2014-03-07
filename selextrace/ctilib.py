@@ -9,7 +9,8 @@ from traceback import format_exc
 
 from cogent import LoadSeqs, RNA
 from cogent.core.sequence import RnaSequence
-from cogent.app.infernal_v11 import cmsearch_from_file
+from cogent.app.infernal_v11 import (cmsearch_from_file, cmbuild_from_file,
+                                     calibrate_file)
 from cogent.parse.fasta import MinimalFastaParser
 from cogent.format.stockholm import stockholm_from_alignment
 from cogent.align.align import classic_align_pairwise
@@ -29,8 +30,6 @@ def fold_clusters(lock, cluster, seqs, otufolder):
         cfo.write(">%s\n%s\n" % (cluster, struct))
         cfo.write(aln.toFasta() + "\n")
         cfo.close()
-        #print cluster + ": " + struct
-        #stdout.flush()
         lock.release()
     except Exception:
         lock.release()
@@ -53,7 +52,7 @@ class SeqStructure(object):
         if self._seqmap is not None:
             strmap = "seqmap: " + ' '.join([str(pos) for pos in self._seqmap])
         else:
-            strmap = "structmap: " + ' '.join([str(pos) 
+            strmap = "structmap: " + ' '.join([str(pos)
                                                for pos in self._structmap])
         return ''.join([self.struct, "\n", strmap])
 
@@ -71,14 +70,9 @@ class SeqStructure(object):
     def add_seqmap(self, seq):
         if len(seq) != len(self.struct):
             raise ValueError("sequence must be same length as structure!")
-        pairs = ['AU', 'UA', 'GC', 'CG', 'GU', 'UG']
         seqmap = []
         for p1, p2 in self._structmap:
             pair = seq[p1] + seq[p2]
-            #if pair.upper() not in pairs:
-            #    raise ValueError("\n" + self.struct + "\n" + seq +
-            #                     "\npair %s at position %i,%i not valid!" %
-            #                    (pair, p1, p2))
             seqmap.append((p1, p2, pair))
         self._seqmap = seqmap
         self.seq = seq
@@ -155,7 +149,7 @@ class SeqStructure(object):
 
 
 def build_reference(keys, refsize):
-    '''Creates a random list of references refsize long, returning rest as 
+    '''Creates a random list of references refsize long, returning rest as
        nonref
     '''
     shuffle(keys)
@@ -197,6 +191,7 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
     #missing certain key functionality expected of lists and dicts
     return dict(groupstruct), list(nogroup)
 
+
 def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
     #takes in list of seqstructure objects for nonref and ref
     try:
@@ -212,18 +207,18 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
         for pos, currnonref in enumerate(nonref):
             if isinstance(currnonref, str):
                 print currnonref
-            seq1 = RnaSequence(currnonref.seq.replace("-",""))
+            seq1 = RnaSequence(currnonref.seq.replace("-", ""))
             bestref = ""
             bestscore = minscore
             if denovo:
                 ref = nonref[pos+1:]
             #compare to each reference item
             for teststruct in ref:
-                seq = teststruct.seq.replace("-","")
+                seq = teststruct.seq.replace("-", "")
                 seq2 = RnaSequence(seq)
                 #get alignment score and add to seq/struct score
                 aln, alnsc = classic_align_pairwise(seq1, seq2, alnscores, -1,
-                                                    -1, False, 
+                                                    -1, False,
                                                     return_score=True)
                 #score is normalized by dividing each score by sequence length
                 #then adding. This should keep scores between zero and two
@@ -238,7 +233,7 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
                     groupstruct[bestref].append(currnonref.struct)
             else:
                 nogroup.append(currnonref)
-    except Exception, e:
+    except Exception:
         print "GROUP: ", format_exc()
     return groupstruct, nogroup
 
@@ -302,6 +297,7 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
             grouped[ug] = []
         return grouped
 
+
 def final_fold(seqs, params, outfolder, group, fold=True):
             if exists("%sgroup_%i.fasta" % (outfolder, group)):
                 return
@@ -316,7 +312,7 @@ def final_fold(seqs, params, outfolder, group, fold=True):
                 fout.write(">SS_Struct\n%s\n" % struct)
             fout.close()
 
-        
+
 def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
     '''Function for multithreading. Creates the final BayesFold alignment and
     writes to files, then r2r struct and infernal CM file'''
@@ -356,28 +352,29 @@ def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
         logout.write(out)
         logout.close()
         with open(currotufolder + "/bayesfold-aln.fasta", 'w') as alnout:
-            alnout.write(">SS_struct\n" + struct + "\n" + aln.toFasta())
+            alnout.write(">SS_struct\n%s\n%s" + (struct, aln.toFasta()))
 
         #create standard weights for infernal
         infweights = ""
-        for pos in range(0,len(weights), 2):
-            infweights = ''.join([infweights,'#GS\t%s\tWT\t%s\n' % 
-                               (weights[pos], 
-                                str(float(weights[pos+1]) / maxweight))])
+        for pos in range(0, len(weights), 2):
+            infweights = ''.join([infweights, '#GS\t%s\tWT\t%s\n' %
+                                 (weights[pos],
+                                  str(float(weights[pos+1]) / maxweight))])
         #create weights in for r2r
         r2r_weights = "#=GF USE THIS WEIGHT MAP " + ' '.join(weights)
-
         #create sto file with r2r and std weights
         sto = stockholm_from_alignment(aln, GC_annotation={'SS_cons': struct})
         sto[-1] = infweights
         sto.append(r2r_weights + "\n")
         sto.append("//\n")
-        with open(currotufolder + "/bayesfold-aln.sto", 'w') as alnout:
+        stofile = currotufolder + "/bayesfold-aln.sto"
+        with open(stofile, 'w') as alnout:
             alnout.write(sto)
+
         #make R2R secondary structure for alignment
         make_r2r(currotufolder+"/bayesfold-aln.sto", currotufolder, currgroup)
         #create CM file for infernal from group
-        with open(currotufolder + "/cmfile.cm", 'w'):
+        with open(currotufolder + "/cmfile.cm", 'w') as fout:
             fout.write(cmbuild_from_file(stofile, params={'--wgiven': True}))
         calibrate_file(currotufolder + "cmfile.cm", cpus=cpus)
     except Exception, e:
@@ -389,15 +386,15 @@ def make_r2r(insto, outfolder, group):
     '''generates R2R secondary structure pdf with default colorings'''
     try:
         outinfo = (outfolder, group)
-        command = ["r2r", "--GSC-weighted-consensus", insto, 
-                   "%s/%s.sto" % outinfo, "3", "0.97", "0.9", 
+        command = ["r2r", "--GSC-weighted-consensus", insto,
+                   "%s/%s.sto" % outinfo, "3", "0.97", "0.9",
                    "0.75", "4", "0.97", "0.9", "0.75", "0.5", "0.1"]
         p = Popen(command)
         retcode = p.wait()
         if retcode != 0:
-            raise RuntimeError, "r2r: " + p.stderr
-        p = Popen(["r2r", "%s/%s.sto" % outinfo, "%s/%s.pdf" % outinfo], 
-                   stdout=PIPE)
+            raise RuntimeError("r2r: " + p.stderr)
+        p = Popen(["r2r", "%s/%s.sto" % outinfo, "%s/%s.pdf" % outinfo],
+                  stdout=PIPE)
         retcode = p.wait()
         #fix known r2r base-pair issue if PDF not created
         if retcode != 0:
@@ -409,7 +406,7 @@ def make_r2r(insto, outfolder, group):
             with open("%s/%s.sto" % outinfo, 'w') as fout:
                 fout.write(''.join(sto))
             p = Popen(["r2r", "%s/%s.sto" % outinfo, "%s/%s.pdf" % outinfo],
-                       stdout=PIPE)
+                      stdout=PIPE)
             p.wait()
     except Exception, e:
         print "r2r: ", str(e)
@@ -419,7 +416,7 @@ def score_local_rnaforester(struct1, struct2):
     '''returns local aignment score of two structures'''
     #return gigantically negative number if no structure for one struct
     if "(" not in struct1 or "(" not in struct2:
-        raise ValueError("%s\n%s\nNo pairing in structures!" % (struct1, 
+        raise ValueError("%s\n%s\nNo pairing in structures!" % (struct1,
                          struct2))
     p = Popen(["RNAforester", "--score", "-l"], stdin=PIPE, stdout=PIPE)
     p.stdin.write(''.join([struct1, "\n", struct2, "\n&"]))
@@ -432,9 +429,10 @@ def score_multi_forester(basestruct, checkstruct, foresterscore):
     else:
         return ""
 
+
 def group_by_forester(fulldict, foresterscore, cpus=1):
     structs = fulldict.keys()
-    for pos, currstruct in enumerate(structs): # for each structure
+    for pos, currstruct in enumerate(structs):  # for each structure
         #skip if already grouped
         if currstruct not in fulldict:
             continue
@@ -473,15 +471,15 @@ def run_infernal(cmfile, rnd, basefolder, outfolder, cpus=1, score=0.0):
         seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
     else:
         raise IOError("Round's fasta file does not exist!")
-    params = {'--mid': True, '--Fmid': 0.0002, '--notrunc': True, 
+    params = {'--mid': True, '--Fmid': 0.0002, '--notrunc': True,
               '--toponly': True, '--cpu': cpus}  # '-g': True,
-    result = cmsearch_from_file(cmfile, seqs, RNA, cutoff=score, 
+    result = cmsearch_from_file(cmfile, seqs, RNA, cutoff=score,
                                 params=params)
     with open("%s/R%ihits.fna" % (outfolder, rnd), 'w') as fout:
         for hit in result:
-            fout.write( ">%s score:%0.1f e-val:%f\n%s\n" % (hit[0], hit[14],
-                                                          hit[15],
-                                                          seqs.getSeq(hit[0])))
+            fout.write(">%s score:%0.1f e-val:%f\n%s\n" % (hit[0], hit[14],
+                                                           hit[15],
+                                                           seqs.getSeq(hit[0])))
     if exists("%s/log.txt" % outfolder):
         with open("%s/log.txt" % outfolder, 'a') as fout:
             fout.write("Round %i: %i hits\n" % (rnd, len(result)))
