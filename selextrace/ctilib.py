@@ -295,7 +295,6 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
             grouped.update(g)
             endgrouped = len(grouped)
         #do the last grouping
-        print "final!"
         g, ungrouped = group(ungrouped, structscore)
         grouped.update(g)
         #add ungroupable bit to end
@@ -318,9 +317,9 @@ def final_fold(seqs, params, outfolder, group, fold=True):
             fout.close()
 
         
-def create_group_output(groupfasta, basefolder, minseqs=1):
+def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
     '''Function for multithreading. Creates the final BayesFold alignment and
-    writes to files, then r2r struct'''
+    writes to files, then r2r struct and infernal CM file'''
     try:
         #skip if already run and program just crashed or whatever
         currgroup = groupfasta.split("/")[-1].split(".")[0]
@@ -329,6 +328,7 @@ def create_group_output(groupfasta, basefolder, minseqs=1):
             return
         seqs = []
         weights = []
+        maxweight = 0
         count = 0
         fin = open(groupfasta, 'rU')
         for header, seq in MinimalFastaParser(fin):
@@ -338,6 +338,8 @@ def create_group_output(groupfasta, basefolder, minseqs=1):
             seqs.append((header.split()[0], seq.strip()))
             weight = count_seqs(header)
             count += weight
+            if weight > maxweight:
+                maxweight = weight
             weights.append(header.split()[0])
             weights.append(str(weight))
         fin.close()
@@ -349,30 +351,35 @@ def create_group_output(groupfasta, basefolder, minseqs=1):
         out = ' '.join([currgroup, ":\n", str(count),
                         "sequences\n", str(aln.getNumSeqs()),
                         "unique sequences\nStructure: ", struct, "\n"])
-        #write out alignment and structure in fasta and stockholm formats
-        #write that shit
+        #write out alignment and structure in fasta format
         logout = open(currotufolder + "/log.txt", 'w')
         logout.write(out)
         logout.close()
-        alnout = open(currotufolder + "/bayesfold-aln.fasta", 'w')
-        alnout.write(">SS_struct\n" + struct + "\n" + aln.toFasta())
-        alnout.close()
-        alnout = open(currotufolder + "/bayesfold-aln.sto", 'w')
-        struct_dict = {'SS_cons': struct}
-        alnout.write(stockholm_from_alignment(aln, GC_annotation=struct_dict))
-        alnout.close()
-        #append weights in for r2r
-        weights = "#=GF USE THIS WEIGHT MAP " + ' '.join(weights)
-        alnout = open(currotufolder + "/bayesfold-aln.sto", 'U')
-        sto = alnout.readlines()
-        alnout.close()
-        sto[-1] = weights + "\n"
+        with open(currotufolder + "/bayesfold-aln.fasta", 'w') as alnout:
+            alnout.write(">SS_struct\n" + struct + "\n" + aln.toFasta())
+
+        #create standard weights for infernal
+        infweights = ""
+        for pos in range(0,len(weights), 2):
+            infweights = ''.join([infweights,'#GS\t%s\tWT\t%s\n' % 
+                               (weights[pos], 
+                                str(float(weights[pos+1]) / maxweight))])
+        #create weights in for r2r
+        r2r_weights = "#=GF USE THIS WEIGHT MAP " + ' '.join(weights)
+
+        #create sto file with r2r and std weights
+        sto = stockholm_from_alignment(aln, GC_annotation={'SS_cons': struct})
+        sto[-1] = infweights
+        sto.append(r2r_weights + "\n")
         sto.append("//\n")
-        alnout = open(currotufolder + "/bayesfold-aln.sto", 'w')
-        alnout.write(''.join(sto))
-        alnout.close()
+        with open(currotufolder + "/bayesfold-aln.sto", 'w') as alnout:
+            alnout.write(sto)
         #make R2R secondary structure for alignment
         make_r2r(currotufolder+"/bayesfold-aln.sto", currotufolder, currgroup)
+        #create CM file for infernal from group
+        with open(currotufolder + "/cmfile.cm", 'w'):
+            fout.write(cmbuild_from_file(stofile, params={'--wgiven': True}))
+        calibrate_file(currotufolder + "cmfile.cm", cpus=cpus)
     except Exception, e:
         print "create_group_output:", str(e)
         stdout.flush()
@@ -394,14 +401,13 @@ def make_r2r(insto, outfolder, group):
         retcode = p.wait()
         #fix known r2r base-pair issue if PDF not created
         if retcode != 0:
-            fin = open(outfolder + "/" + group + ".sto", 'U')
-            sto = fin.readlines()
-            fin.close()
+            sto = 0
+            with open(outfolder + "/" + group + ".sto", 'U') as fin:
+                sto = fin.readlines()
             sto[-2] = "#=GF R2R SetDrawingParam autoBreakPairs true\n"
             sto[-1] = "//\n"
-            fout = open("%s/%s.sto" % outinfo, 'w')
-            fout.write(''.join(sto))
-            fout.close()
+            with open("%s/%s.sto" % outinfo, 'w') as fout:
+                fout.write(''.join(sto))
             p = Popen(["r2r", "%s/%s.sto" % outinfo, "%s/%s.pdf" % outinfo],
                        stdout=PIPE)
             p.wait()
@@ -452,32 +458,30 @@ def group_by_forester(fulldict, foresterscore, cpus=1):
     return fulldict
 
 
-def run_infernal(lock, cmfile, rnd, basefolder, outfolder, cpus=1, score=0.0, mpi=False):
-    try:
-        seqs = 0
-        #Only search unique sequences to save time
-        #check if previous run has removed some sequences, load correct file
-        if exists(basefolder + "R" + str(rnd) + "/R" + str(rnd) + "-Unique-Remaining.fasta"):
-            seqs = LoadSeqs(basefolder + "R" + str(rnd) + "/R" + str(rnd) + "-Unique-Remaining.fasta", moltype=RNA, aligned=False)
-        else:
-            seqs = LoadSeqs(basefolder + "R" + str(rnd) + "/R" + str(rnd) + "-Unique.fasta", moltype=RNA, aligned=False)
-        params = {'--mid': True, '--Fmid': 0.0002, '--notrunc': True, '--toponly': True, '--cpu': cpus}  # '-g': True,
-        if mpi:
-            params['mpi'] = True
-        result = cmsearch_from_file(cmfile, seqs, RNA, cutoff=score, params=params)
-        fout = open(outfolder + "/R" + str(rnd) + "hits.txt", 'w')
-        fout.write(str(len(result)) + " hits\nheader,bitscore,e-value\n")
+def run_infernal(cmfile, rnd, basefolder, outfolder, cpus=1, score=0.0):
+    seqs = 0
+    #Only search unique sequences to save time
+    #check if previous run has removed some sequences, load correct file
+    if not exists(cmfile):
+        raise IOError("cmfile path provided does not exist!")
+    uniques_remain_file = ''.join([basefolder, "R", str(rnd), "/R", str(rnd),
+                                   "-Unique-Remaining.fasta"])
+    uniques_file = "%sR%i/R%i-Unique.fasta" % (basefolder, rnd, rnd)
+    if exists(uniques_remain_file):
+        seqs = LoadSeqs(uniques_remain_file, moltype=RNA, aligned=False)
+    elif exists(uniques_file):
+        seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
+    else:
+        raise IOError("Round's fasta file does not exist!")
+    params = {'--mid': True, '--Fmid': 0.0002, '--notrunc': True, 
+              '--toponly': True, '--cpu': cpus}  # '-g': True,
+    result = cmsearch_from_file(cmfile, seqs, RNA, cutoff=score, 
+                                params=params)
+    with open("%s/R%ihits.fna" % (outfolder, rnd), 'w') as fout:
         for hit in result:
-            fout.write(hit[0] + "," + str(hit[14]) + "," + str(hit[15]) + "\n")
-        fout.close()
-        lock.acquire()
-        fout = open(outfolder + "/log.txt", 'a')
-        fout.write("Round " + str(rnd) + ": " + str(len(result)) + " hits\n")
-        fout.close()
-        lock.release()
-    except Exception, e:
-        print str(e)
-        lock.release()
-    finally:
-        lock.release()
-
+            fout.write( ">%s score:%0.1f e-val:%f\n%s\n" % (hit[0], hit[14],
+                                                          hit[15],
+                                                          seqs.getSeq(hit[0])))
+    if exists("%s/log.txt" % outfolder):
+        with open("%s/log.txt" % outfolder, 'a') as fout:
+            fout.write("Round %i: %i hits\n" % (rnd, len(result)))
