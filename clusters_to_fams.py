@@ -11,7 +11,8 @@ from cogent import LoadSeqs, RNA
 
 from selextrace.stutils import cluster_seqs, count_seqs
 from selextrace.ctilib import (fold_clusters, create_group_output, final_fold,
-                               group_by_seqstruct, group_by_forester)
+                               group_by_seqstruct, group_by_forester, 
+                               run_infernal)
 
 if __name__ == "__main__":
     starttime = time()
@@ -180,7 +181,7 @@ if __name__ == "__main__":
         #initial clustering by structures generated in first folding
         #run the pool over all shape groups to get final grouped structgroups
         hold = group_by_seqstruct(structgroups, clustscore, cpus=args.c,
-                                  setpercent=0.005)
+                                  setpercent=0.01)
         print "%i end groups (%0.2f hrs)" % (len(hold), (time()-secs)/3600)
         print "Align and fold end groups"
 
@@ -241,9 +242,8 @@ if __name__ == "__main__":
         grouporder.append((group, int(loginfo[1].split()[0]),
                           int(loginfo[2].split()[0])))
         #read in group structure and build dict for families creation
-        structin = open(outfolder + group + "/bayesfold-aln.fasta")
-        struct = structin.read().split("\n")[-2].strip()
-        structin.close()
+        with open(outfolder + group + "/bayesfold-aln.fasta") as structin:
+            struct = structin.readlines()[-2].strip()
         groups[struct] = [group]
 
     #write out file of sequence counts
