@@ -1,6 +1,3 @@
-from subprocess import Popen, PIPE
-from collections import Counter
-
 from cogent import LoadSeqs
 from cogent.app.uclust import Uclust, clusters_from_uc_file
 from .qiime import local_align_primer_seq
@@ -17,8 +14,8 @@ def write_fasta_list(lst, filename):
 def write_fasta_dict(dct, filename):
     '''writes formatted dict {header: sequence} to fasta file filename'''
     fileout = open(filename, 'w')
-    for header, seq in dct:
-        fileout.write('>%s\n%s\n' % (header, seq))
+    for header in dct:
+        fileout.write('>%s\n%s\n' % (header, dct[header]))
     fileout.close()
 
 
@@ -132,15 +129,3 @@ def remove_duplicates(seqsin):
     uniques = uniques.items()
     uniques.sort(key=lambda x: x[1], reverse=True)
     return uniques
-
-
-def remove_duplicates_counter(seqsin):
-    parsable_seqs = LoadSeqs(data=seqsin, aligned=False)
-    uniques = Counter(parsable_seqs.iterSeqs())
-    return dict(uniques)
-
-
-def get_shape(struct):
-    '''Converts a dot-bracket notation to abstract shape notation'''
-    p = Popen(["RNAshapes", "-D", struct], stdout=PIPE)
-    return p.communicate()[0].strip()

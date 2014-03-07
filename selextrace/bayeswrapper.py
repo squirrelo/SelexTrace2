@@ -1,4 +1,4 @@
-from cogent import RNA
+from cogent import LoadSeqs, RNA
 from cogent.app.muscle_v38 import align_unaligned_seqs
 from Bayes.bayes import BayesCalculation
 
@@ -22,7 +22,7 @@ def bayesfold(seqsin, temperature=37, params=None, align=True):
         if params is None:
             params = {}
         if not align:
-            aln = seqsin
+            aln = LoadSeqs(data=seqsin, moltype=RNA, aligned=True)
         else:
             aln = align_unaligned_seqs(seqsin, RNA, params=params)
         bayesinput = BayesInputWrapper(aln.getSeqNames(),
@@ -36,3 +36,4 @@ def bayesfold(seqsin, temperature=37, params=None, align=True):
         return aln, struct
     except Exception, e:
         print "BAYESFOLD ERROR: ", e
+        raise RuntimeError("BAYESFOLD ERROR: ", e)
