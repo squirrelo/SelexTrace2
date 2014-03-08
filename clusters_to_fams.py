@@ -11,7 +11,8 @@ from cogent import LoadSeqs, RNA
 
 from selextrace.stutils import cluster_seqs, count_seqs
 from selextrace.ctilib import (fold_clusters, create_group_output, final_fold,
-                               group_by_seqstruct, group_by_forester)
+                               group_by_seqstruct, group_by_forester, 
+                               run_infernal)
 
 if __name__ == "__main__":
     starttime = time()
@@ -21,6 +22,8 @@ if __name__ == "__main__":
         help="FASTA file of unique sequences sorted by abundance.")
     parser.add_argument('-o', required=True,
         help="Base folder to output all data")
+    parser.add_argument('-r', required=True, type=int,
+        help="Round this input file comes from")
     parser.add_argument('-f', required=True,
         help="Base folder containing SELEX round fasta files")
     parser.add_argument('--sim', type=float, default=0.99,
@@ -65,9 +68,11 @@ if __name__ == "__main__":
     infofile.write(''.join(["Program started ", date, "\n",
                             "FASTA file:\t", args.i, "\n",
                             "Output folder:\t", args.o, "\n"
+                            "Round:\t", str(args.r), "\n"
                             "Uclust simmilarity:\t", str(args.sim), "\n",
                             "Min seqs for group:\t", str(args.minseqs), "\n",
                             "Clustering score cutoff:\t", str(args.csc), "\n",
+                            "Infernal score cutoff:\t", str(args.isc), "\n",
                             "RNAforester score cutoff:\t", str(args.fsc), "\n",
                             "CPUs:\t", str(args.c), "\n"]))
     infofile.close()
@@ -111,12 +116,12 @@ if __name__ == "__main__":
         cout.close()
         numclusts = len(clusters)
         print str(len(clusters)) + " clusters"
-        print "Runtime: %f min" % (time() - secs)/60)
+        print "Runtime: %0.2f min" % ((time() - secs)/60)
 
     if not exists(outfolder + "cluster_structs.fasta"):
         #create file to write to if not already there
-        cfo = open(outfolder + "cluster_structs.fasta", 'w')
-        cfo.close()
+        with open(outfolder + "cluster_structs.fasta", 'w'):
+            pass
         print "Running BayesFold over " + str(len(clusters)) + " clusters"
         secs = time()
         #make a pool of workers, one for each cpu available
@@ -168,15 +173,16 @@ if __name__ == "__main__":
     clusters.clear()
     del clusters
 
-    print "Runtime: %f min" % (time() - secs)/60
+    print "Runtime: %0.2f min" % ((time() - secs)/60)
     print "==Grouping clusters by sequence & secondary structure=="
     if not exists(outfolder + "fasta_groups/"):
         secs = time()
         print "start: " + str(len(structgroups)) + " initial groups"
         #initial clustering by structures generated in first folding
         #run the pool over all shape groups to get final grouped structgroups
-        hold = group_by_seqstruct(structgroups, clustscore, cpus=args.c)
-        print "%i end groups (%f hrs)" % (len(hold), (time()-secs)/3600)
+        hold = group_by_seqstruct(structgroups, clustscore, cpus=args.c,
+                                  setpercent=0.01)
+        print "%i end groups (%0.2f hrs)" % (len(hold), (time()-secs)/3600)
         print "Align and fold end groups"
 
         secs = time()
@@ -203,7 +209,7 @@ if __name__ == "__main__":
         del hold
         pool.close()
         pool.join()
-        print  "Folding complete (%f min)" % (time()-secs)/60
+        print  "Folding complete (%0.2f min)" % ((time()-secs)/60)
     else:
         print "Previously grouped"
 
@@ -236,9 +242,8 @@ if __name__ == "__main__":
         grouporder.append((group, int(loginfo[1].split()[0]),
                           int(loginfo[2].split()[0])))
         #read in group structure and build dict for families creation
-        structin = open(outfolder + group + "/bayesfold-aln.fasta")
-        struct = structin.read().split("\n")[-2].strip()
-        structin.close()
+        with open(outfolder + group + "/bayesfold-aln.fasta") as structin:
+            struct = structin.readlines()[-2].strip()
         groups[struct] = [group]
 
     #write out file of sequence counts
@@ -250,16 +255,17 @@ if __name__ == "__main__":
     groupsizefile.close()
 
     print count, "final groups"
-    print "Runtime: %f hrs" % (time() - secs) / 3600)
+    print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
 
-    #print "===Running Infernal for groups==="
-    #print "infernal score cutoff: ", args.isc
+    print "===Running Infernal for groups==="
+    print "infernal score cutoff: ", args.isc
 
-    #for group in walk(outfolder).next()[1]:
-    #    if group == "fasta_groups":
-    #        continue
-    #    run_infernal("%s%s/cmfile.cm" % (outfolder, group), args.r, 
-    #                  basefolder, group, cpus=args.c, score=args.isc)
+    for group in walk(outfolder).next()[1]:
+        if group == "fasta_groups":
+            continue
+        for rnd in range(1, args.r+1):
+            run_infernal("%s%s/cmfile.cm" % (outfolder, group), rnd,
+                          basefolder, group, cpus=args.c, score=args.isc)
 
     print "==Creating families from groups=="
     print "RNAforester score cutoff:", args.fsc
