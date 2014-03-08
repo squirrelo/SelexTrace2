@@ -264,8 +264,8 @@ if __name__ == "__main__":
         if group == "fasta_groups":
             continue
         for rnd in range(1, args.r+1):
-            run_infernal("%s%s/cmfile.cm" % (outfolder, group), rnd,
-                          basefolder, group, cpus=args.c, score=args.isc)
+            run_infernal("%s%s/cmfile.cm" % (outfolder, group), rnd, 
+                          basefolder, outfolder + group+"/", cpus=args.c, score=args.isc)
 
     print "==Creating families from groups=="
     print "RNAforester score cutoff:", args.fsc

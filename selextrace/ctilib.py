@@ -352,7 +352,7 @@ def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
         logout.write(out)
         logout.close()
         with open(currotufolder + "/bayesfold-aln.fasta", 'w') as alnout:
-            alnout.write(">SS_struct\n%s\n%s" + (struct, aln.toFasta()))
+            alnout.write(">SS_struct\n%s\n%s" % (struct, aln.toFasta()))
 
         #create standard weights for infernal
         infweights = ""
@@ -364,12 +364,13 @@ def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
         r2r_weights = "#=GF USE THIS WEIGHT MAP " + ' '.join(weights)
         #create sto file with r2r and std weights
         sto = stockholm_from_alignment(aln, GC_annotation={'SS_cons': struct})
+        sto = sto.split("\n")
         sto[-1] = infweights
         sto.append(r2r_weights + "\n")
         sto.append("//\n")
         stofile = currotufolder + "/bayesfold-aln.sto"
         with open(stofile, 'w') as alnout:
-            alnout.write(sto)
+            alnout.write('\n'.join(sto))
 
         #make R2R secondary structure for alignment
         make_r2r(currotufolder+"/bayesfold-aln.sto", currotufolder, currgroup)
@@ -378,7 +379,7 @@ def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
             fout.write(cmbuild_from_file(stofile, params={'--wgiven': True}))
         calibrate_file(currotufolder + "cmfile.cm", cpus=cpus)
     except Exception, e:
-        print "create_group_output:", str(e)
+        print "create_group_output:\n", format_exc(e)
         stdout.flush()
 
 
@@ -409,7 +410,7 @@ def make_r2r(insto, outfolder, group):
                       stdout=PIPE)
             p.wait()
     except Exception, e:
-        print "r2r: ", str(e)
+        print "r2r: ", format_exc(e)
 
 
 def score_local_rnaforester(struct1, struct2):
@@ -461,7 +462,7 @@ def run_infernal(cmfile, rnd, basefolder, outfolder, cpus=1, score=0.0):
     #Only search unique sequences to save time
     #check if previous run has removed some sequences, load correct file
     if not exists(cmfile):
-        raise IOError("cmfile path provided does not exist!")
+        raise IOError("cmfile path provided does not exist: %s" % cmfile)
     uniques_remain_file = ''.join([basefolder, "R", str(rnd), "/R", str(rnd),
                                    "-Unique-Remaining.fasta"])
     uniques_file = "%sR%i/R%i-Unique.fasta" % (basefolder, rnd, rnd)
