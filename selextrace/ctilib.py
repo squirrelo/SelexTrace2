@@ -206,7 +206,7 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
                 seq2 = teststruct.seq.replace("-", "")
                 #get alignment score and add to seq/struct score
                 aln = global_align(seq1, seq2, gap_open=-1, gap_extend=-1,
-                                   matrix="selextrace/NucMatrix")
+                                   matrix=matrix)
                 alnsc = score_alignment(aln[0], aln[1], gap_open=-1, 
                                         gap_extend=-1, matrix=matrix)
                 #score is normalized by dividing each score by sequence length
