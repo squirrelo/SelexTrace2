@@ -1,3 +1,14 @@
+#!/usr/bin/env python
+
+__author__ = "Joshua Shorenstein"
+__copyright__ = "Copyright 2014, SelexTrace project"
+__credits__ = ["Joshua Shorenstein"]
+__license__ = "BSD"
+__version__ = "0.0.1-dev"
+__maintainer__ = "Joshua Shorenstein"
+__email__ = "joshua.shorenstein@colorado.edu"
+__status__ = "Development"
+
 from os.path import exists
 from os import mkdir, walk
 import argparse
@@ -264,8 +275,9 @@ if __name__ == "__main__":
         if group == "fasta_groups":
             continue
         for rnd in range(1, args.r+1):
-            run_infernal("%s%s/cmfile.cm" % (outfolder, group), rnd, 
-                          basefolder, outfolder + group+"/", cpus=args.c, score=args.isc)
+            run_infernal("%s%s/cmfile.cm" % (outfolder, group), rnd,
+                         basefolder, outfolder + group+"/", cpus=args.c,
+                         score=args.isc)
 
     print "==Creating families from groups=="
     print "RNAforester score cutoff:", args.fsc
@@ -283,4 +295,3 @@ if __name__ == "__main__":
 
     endtime = (time() - starttime)/3600
     print "Program ended", datetime.now(), " Runtime:", endtime, "hrs"
-                                                  

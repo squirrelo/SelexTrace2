@@ -1,6 +1,7 @@
 from cogent import LoadSeqs, RNA
 from cogent.app.muscle_v38 import align_unaligned_seqs
 from Bayes.bayes import BayesCalculation
+from traceback import format_exc
 
 
 class BayesInputWrapper:
@@ -35,5 +36,5 @@ def bayesfold(seqsin, temperature=37, params=None, align=True):
         del bayesinput
         return aln, struct
     except Exception, e:
-        print "BAYESFOLD ERROR: ", e
-        raise RuntimeError("BAYESFOLD ERROR: ", e)
+        print "BAYESFOLD ERROR: ", format_exc(e)
+        raise RuntimeError("BAYESFOLD ERROR: ", format_exc(e))

@@ -13,7 +13,7 @@ from cogent.app.infernal_v11 import (cmsearch_from_file, cmbuild_from_file,
                                      calibrate_file)
 from cogent.parse.fasta import MinimalFastaParser
 from cogent.format.stockholm import stockholm_from_alignment
-from cogent.align.align import classic_align_pairwise
+from cogent.align.algorithm import nw_align
 
 from bayeswrapper import bayesfold
 from selextrace.stutils import count_seqs
@@ -45,12 +45,14 @@ class SeqStructure(object):
             self.add_seqmap(seq)
             self.seq = seq
 
+        self.pairs = ('AU', 'UA', 'GC', 'CG', 'GU', 'UG')
+
     def __len__(self):
         return len(self.struct)
 
     def __str__(self):
         if self._seqmap is not None:
-            strmap = "seqmap: " + ' '.join([str(pos) for pos in self._seqmap])
+            strmap = "seqmap:" + ' '.join([str(pos) for pos in self._seqmap])
         else:
             strmap = "structmap: " + ' '.join([str(pos)
                                                for pos in self._structmap])
@@ -86,17 +88,17 @@ class SeqStructure(object):
             and one point if it can base pair at all. This divided by seq
             length to get final score between 0 and 1.
         """
+        maxscore = 0
+        score = 0
+        start = 0
+        end = len(seq)
         if self._seqmap is None:
             raise RuntimeError("No seqmap exists!")
         if len(seq) == len(self.struct):
         #same length so trivial
-            return self._eval_struct_seq(seq) / len(self._seqmap)
+            maxscore = self._eval_struct_seq(seq)
         elif len(seq) > len(self.struct):
             #sequence longer than struct so keep slicing sequence
-            maxscore = 0
-            score = 0
-            start = 0
-            end = len(self)
             #evaluate all possible sequence fittings into the structure
             #return highest scoring one
             while end != len(seq):
@@ -105,13 +107,8 @@ class SeqStructure(object):
                     maxscore = score
                 start += 1
                 end += 1
-            return maxscore / len(self._seqmap)
         else:
             #struct longer than sequence so walk seq down struct and compare
-            maxscore = 0
-            score = 0
-            start = 0
-            end = len(seq)
             #evaluate all possible sequence fittings into the structure
             #return highest scoring one
             while end != len(self.struct):
@@ -120,13 +117,12 @@ class SeqStructure(object):
                     maxscore = score
                 start += 1
                 end += 1
-            #return normalized score
-            return float(maxscore) / len(self._seqmap)
+        #return normalized score
+        return float(maxscore) / len(self._seqmap)
 
     def _eval_struct_seq(self, seq, seqoffset=0):
         if self._seqmap is None:
             raise RuntimeError("There is no seqmap to evaluate!")
-        pairs = ('AU', 'UA', 'GC', 'CG', 'GU', 'UG')
         score = 0
         for p1, p2, pair in self._seqmap:
             p2 = p2 - seqoffset
@@ -138,7 +134,7 @@ class SeqStructure(object):
             currpair = seq[p1] + seq[p2]
             currpair = currpair.upper()
             pair = pair.upper()
-            if currpair in pairs:
+            if currpair in self.pairs:
                 if currpair == pair:
                     #perfect pair match with bases scores 2 points
                     score += 2
@@ -155,13 +151,6 @@ def build_reference(keys, refsize):
     shuffle(keys)
     #return reference, nonreference by slicing list
     return keys[:refsize], keys[refsize:]
-
-
-alnscores = {
-    ('A', 'A'): 1, ('A', 'U'): -1, ('U', 'U'): 1, ('U', 'A'): -1,
-    ('C', 'A'): -1, ('C', 'U'): -1, ('G', 'G'): 1, ('U', 'C'): -1,
-    ('G', 'A'): -1, ('G', 'U'): -1, ('A', 'G'): -1, ('C', 'G'): -1,
-    ('C', 'C'): 1, ('U', 'G'): -1, ('G', 'C'): -1, ('A', 'C'): -1}
 
 
 def group_to_reference(reference, nonref, minscore, cpus=1):
@@ -217,12 +206,10 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
                 seq = teststruct.seq.replace("-", "")
                 seq2 = RnaSequence(seq)
                 #get alignment score and add to seq/struct score
-                aln, alnsc = classic_align_pairwise(seq1, seq2, alnscores, -1,
-                                                    -1, False,
-                                                    return_score=True)
+                aln, alnsc = nw_align(seq1, seq2, return_score=True)
                 #score is normalized by dividing each score by sequence length
                 #then adding. This should keep scores between zero and two
-                score = (alnsc/len(aln) + currnonref.score_seq(seq))
+                score = (alnsc/len(aln[0]) + currnonref.score_seq(seq))/3
                 if score >= bestscore:
                     bestscore = score
                     bestref = teststruct.struct
@@ -233,8 +220,8 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
                     groupstruct[bestref].append(currnonref.struct)
             else:
                 nogroup.append(currnonref)
-    except Exception:
-        print "GROUP: ", format_exc()
+    except Exception, e:
+        print "GROUP: ", format_exc(e)
     return groupstruct, nogroup
 
 
