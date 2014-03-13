@@ -13,7 +13,7 @@ from cogent.app.infernal_v11 import (cmsearch_from_file, cmbuild_from_file,
                                      calibrate_file)
 from cogent.parse.fasta import MinimalFastaParser
 from cogent.format.stockholm import stockholm_from_alignment
-from cogent.align.algorithm import nw_align
+from nwalign import global_align, score_alignment
 
 from bayeswrapper import bayesfold
 from selextrace.stutils import count_seqs
@@ -194,22 +194,22 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
             nogroup = []
         #loop through all nonreference items
         for pos, currnonref in enumerate(nonref):
-            if isinstance(currnonref, str):
-                print currnonref
-            seq1 = RnaSequence(currnonref.seq.replace("-", ""))
+            seq1 = currnonref.seq.replace("-", "")
             bestref = ""
             bestscore = minscore
             if denovo:
                 ref = nonref[pos+1:]
             #compare to each reference item
             for teststruct in ref:
-                seq = teststruct.seq.replace("-", "")
-                seq2 = RnaSequence(seq)
+                seq2 = teststruct.seq.replace("-", "")
                 #get alignment score and add to seq/struct score
-                aln, alnsc = nw_align(seq1, seq2, return_score=True)
+                aln = global_align(seq1, seq2, gap_open=-1, gap_extend=-1,
+                                   matrix="selextrace/NucMatrix")
+                alnsc = score_alignment(aln[0], aln[1], gap_open=-1, 
+                                        gap_extend=-1, matrix="selextrace/NucMatrix")
                 #score is normalized by dividing each score by sequence length
-                #then adding. This should keep scores between zero and two
-                score = (alnsc/len(aln[0]) + currnonref.score_seq(seq))/3
+                #then adding. This should keep scores between zero and one
+                score = (alnsc/len(aln[0]) + currnonref.score_seq(seq2))/3
                 if score >= bestscore:
                     bestscore = score
                     bestref = teststruct.struct
@@ -254,10 +254,9 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
         #create SeqStructures objects for items we are clustering
         #just de-novo group if 20 or less to save time and effort
         if len(grouping) <= 20:
-            print ">20"
             grouped, ungrouped = group(grouping, structscore)
             for ug in ungrouped:
-                grouped[ug] = []
+                grouped[ug.struct] = []
             return grouped
         #for speed, get 1% as initial clustering or user defined.
         #Need at least 10 structs though.
@@ -281,7 +280,7 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
         grouped.update(g)
         #add ungroupable bit to end
         for ug in ungrouped:
-            grouped[ug] = []
+            grouped[ug.struct] = []
         return grouped
 
 
