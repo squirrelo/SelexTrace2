@@ -1,5 +1,5 @@
 from sys import stdout
-from os.path import exists
+from os.path import exists, dirname, abspath
 from os import mkdir
 from subprocess import Popen, PIPE
 from math import ceil
@@ -184,6 +184,8 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
 def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
     #takes in list of seqstructure objects for nonref and ref
     try:
+        basefolder = dirname(abspath(__file__))
+        matrix = basefolder + "/NucMatrix"
         denovo = True
         #if ref list is pased, know we are refrence grouping
         if ref is not None:
@@ -206,7 +208,7 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
                 aln = global_align(seq1, seq2, gap_open=-1, gap_extend=-1,
                                    matrix="selextrace/NucMatrix")
                 alnsc = score_alignment(aln[0], aln[1], gap_open=-1, 
-                                        gap_extend=-1, matrix="selextrace/NucMatrix")
+                                        gap_extend=-1, matrix=matrix)
                 #score is normalized by dividing each score by sequence length
                 #then adding. This should keep scores between zero and one
                 score = (alnsc/len(aln[0]) + currnonref.score_seq(seq2))/3
