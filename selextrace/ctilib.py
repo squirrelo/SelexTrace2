@@ -80,13 +80,13 @@ class SeqStructure(object):
         self.seq = seq
 
     def score_seq(self, seq):
-        """Scores sequence based on how well it fits into given structure.
+        """Scores sequence based on how well it fits into given seq/struct map.
             INPUT:
             seq: RNA sequence to thread into structure
             OUTPUT
             Score, where pair is given 2 points if matches pair in structure
-            and one point if it can base pair at all. This divided by seq
-            length to get final score between 0 and 1.
+            and one point if it can base pair at all. This divided by seqmap
+            length to get final score between 0 and 2.
         """
         maxscore = 0
         score = 0
@@ -154,7 +154,7 @@ def build_reference(keys, refsize):
 
 
 def group_to_reference(reference, nonref, minscore, cpus=1):
-    pool = Pool(processes=cpus)
+    pool = Pool(processes=cpus, maxtasksperchild=1)
     manager = Manager()
     groupstruct = manager.dict()
     nogroup = manager.list()
@@ -166,11 +166,6 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
         #divide up nonref into chunks and align each chunk to reference seqs
         #final # chunks == number of cpus available
         endpos = startpos+chunksize
-        if endpos >= len(nonref):
-            pool.apply_async(func=group, args=(nonref[startpos:], minscore,
-                                               reference, groupstruct,
-                                               nogroup))
-            break
         pool.apply_async(func=group, args=(nonref[startpos:endpos],
                                            minscore, reference, groupstruct,
                                            nogroup))
@@ -202,8 +197,8 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
             if denovo:
                 ref = nonref[pos+1:]
             #compare to each reference item
-            for teststruct in ref:
-                seq2 = teststruct.seq.replace("-", "")
+            for refstruct in ref:
+                seq2 = refstruct.seq.replace("-", "")
                 #get alignment score and add to seq/struct score
                 aln = global_align(seq1, seq2, gap_open=-1, gap_extend=-1,
                                    matrix=matrix)
@@ -211,10 +206,11 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
                                         gap_extend=-1, matrix=matrix)
                 #score is normalized by dividing each score by sequence length
                 #then adding. This should keep scores between zero and one
-                score = (alnsc/len(aln[0]) + currnonref.score_seq(seq2))/3
+                score = ((float(alnsc) / len(aln[0])) +
+                         currnonref.score_seq(seq2))/3
                 if score >= bestscore:
                     bestscore = score
-                    bestref = teststruct.struct
+                    bestref = refstruct.struct
             if bestref != "":
                 if bestref not in groupstruct:
                     groupstruct[bestref] = [currnonref.struct]
@@ -261,10 +257,10 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
                 grouped[ug.struct] = []
             return grouped
         #for speed, get 1% as initial clustering or user defined.
-        #Need at least 10 structs though.
+        #Need at least 5 structs though.
         finishlen = int(ceil(len(grouping) * setpercent))
-        if finishlen < 10:
-            finishlen = 10
+        if finishlen < 5:
+            finishlen = 5
         startgrouped = 0
         endgrouped = 1
         grouped = {}
