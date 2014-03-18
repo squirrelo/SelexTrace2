@@ -113,7 +113,7 @@ if __name__ == "__main__":
         print "Running uclust over sequences"
         #cluster the initial sequences by sequence simmilarity
         clusters = cluster_seqs(args.i, args.sim, folderout=args.o,
-                                gapopen='10.0', gapext='10.0')
+                                gapopen='1.0', gapext='1.0')
 
         #print that shit to file
         hold = clusters.keys()
@@ -136,8 +136,9 @@ if __name__ == "__main__":
         print "Running BayesFold over " + str(len(clusters)) + " clusters"
         secs = time()
         #make a pool of workers, one for each cpu available
+        #200 tasks per child to force garbage collection, since OSX sucks at it
         manager = Manager()
-        pool = Pool(processes=args.c)
+        pool = Pool(processes=args.c, maxtasksperchild=200)
         lock = manager.Lock()
         #run the pool over all clusters to get file of structures
         for cluster in clusters:

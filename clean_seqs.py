@@ -1,10 +1,13 @@
 from os.path import exists, splitext
 from os import mkdir, walk
 from sys import exit
-from cogent.parse.fasta import MinimalFastaParser
-from cogent.parse.fastq import MinimalFastqParser
 from time import time
 import argparse
+
+from cogent.parse.fasta import MinimalFastaParser
+from cogent.parse.fastq import MinimalFastqParser
+
+
 from selextrace.stutils import (write_fasta_list, strip_primer,
                                 remove_duplicates, rem_N_short)
 

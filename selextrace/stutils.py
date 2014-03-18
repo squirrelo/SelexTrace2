@@ -65,12 +65,14 @@ def cluster_seqs(seqspath, simm, folderout='/tmp', gapopen=None, gapext=None):
         folderout += "/"
 
     params = {
-        '--usersort': False,
+        '--usersort': True,
         '--id': float(simm),
         '--maxaccepts': 20,
         '--maxrejects': 500,
         '--stepwords': 20,
-        '--hsp': 0
+        '--hsp': 0,
+        '--match': 1,
+        '--mismatch': -1
     }
     if gapopen is not None:
         params['--gapopen'] = gapopen

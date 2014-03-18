@@ -106,6 +106,12 @@ class Uclust(CommandLineApplication):
         # Gap penalty for extending a gap (see manual)
         '--gapext':ValuedParameter('--',Name='gapext',Delimiter=' '),
 
+        # Score for a match (see manual)
+        '--match':ValuedParameter('--',Name='match',Delimiter=' '),
+
+        # Penalty for a mismatch (see manual)
+        '--mismatch':ValuedParameter('--',Name='mismatch',Delimiter=' '),
+
         # Don't assume input is sorted by length (default assume sorted).
         '--usersort':FlagParameter('--',Name='usersort'),
         
