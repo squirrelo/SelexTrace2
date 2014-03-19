@@ -8,9 +8,7 @@ from multiprocessing import Pool, Manager
 from traceback import format_exc
 
 from cogent import LoadSeqs, RNA
-from cogent.core.sequence import RnaSequence
 from cogent.app.infernal_v11 import (cmsearch_from_file, calibrate_file)
-from cogent.parse.fasta import MinimalFastaParser
 from cogent.format.stockholm import stockholm_from_alignment
 from cogent.app.muscle_v38 import align_unaligned_seqs
 from nwalign import global_align, score_alignment
@@ -202,7 +200,7 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
                 #get alignment score and add to seq/struct score
                 aln = global_align(seq1, seq2, gap_open=-1, gap_extend=-1,
                                    matrix=matrix)
-                alnsc = score_alignment(aln[0], aln[1], gap_open=-1, 
+                alnsc = score_alignment(aln[0], aln[1], gap_open=-1,
                                         gap_extend=-1, matrix=matrix)
                 #score is normalized by dividing each score by sequence length
                 #then adding. This should keep scores between zero and one
@@ -334,7 +332,7 @@ def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
             alnout.write(">SS_cons\n%s\n%s" % (struct, aln.toFasta()))
 
         #shave off info in header for stockholm
-        aln = LoadSeqs(data=aln, moltype=RNA, 
+        aln = LoadSeqs(data=aln, moltype=RNA,
                        label_to_name=lambda x: x.split()[0])
         #create stockholm formatted alignment
         sto = stockholm_from_alignment(aln, GC_annotation={'SS_cons': struct})
@@ -366,6 +364,7 @@ def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
         print "create_group_output:\n", format_exc(e)
         stdout.flush()
 
+
 def cmbuild_from_file(aln, cmout, params=None):
     if params is None:
         params = {}
@@ -381,6 +380,7 @@ def cmbuild_from_file(aln, cmout, params=None):
     if retcode != 0:
         raise RuntimeError("CM file build failed! %s" % p.stderr)
 
+
 def calibrate_cmfile(cmfile, cpus=1):
     if not exists(cmfile):
         raise IOError("cmfile does not exist: %s" % cmfile)
@@ -388,7 +388,7 @@ def calibrate_cmfile(cmfile, cpus=1):
     p = Popen(command, stdout=PIPE, stderr=PIPE)
     retcode = p.wait()
     if retcode != 0:
-        raise RuntimeError("CM file calibration failed! %s" % ''.join(p.stderr))
+        raise RuntimeError("CM file calibrate failed! %s" % ''.join(p.stderr))
 
 
 def make_r2r(insto, outfolder, group):

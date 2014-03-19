@@ -12,7 +12,6 @@ __status__ = "Development"
 from os.path import exists
 from os import mkdir, walk
 import argparse
-from math import ceil
 from time import time
 from datetime import datetime
 from multiprocessing import Pool, Manager
@@ -22,7 +21,7 @@ from cogent import LoadSeqs, RNA
 
 from selextrace.stutils import cluster_seqs, count_seqs
 from selextrace.ctilib import (fold_clusters, create_group_output,
-                               group_by_seqstruct, group_by_forester, 
+                               group_by_seqstruct, group_by_forester,
                                align_order_seqs, run_infernal)
 
 if __name__ == "__main__":
@@ -203,29 +202,28 @@ if __name__ == "__main__":
         mkdir(outfolder + "fasta_groups")
         params = {"-diags": True, "-maxiters": 5}
         pool = Pool(processes=args.c)
-        #need to use fasta string because pycogent sequence collections 
+        #need to use fasta string because pycogent sequence collections
         #HATE multithreading so can't use them
         for num, struct in enumerate(hold):
             count = 0
             seqs = structgroups[struct].degap().toFasta() + "\n"
             count += count_seqs(structgroups[struct].Names)
+            fastafolder = outfolder+"/fasta_groups/"
             for substruct in hold[struct]:
                 seqs = ''.join([seqs,
                                 structgroups[substruct].degap().toFasta(),
                                 "\n"])
                 count += count_seqs(structgroups[substruct].Names)
             pool.apply_async(func=align_order_seqs, args=(seqs, params,
-                                                    outfolder+"/fasta_groups/",
-                                                    num))
+                                                          fastafolder, num))
             #final_fold(seqs, params, outfolder + "fasta_groups/", num)
         hold.clear()
         del hold
         pool.close()
         pool.join()
-        print  "Align complete (%0.2f min)" % ((time()-secs)/60)
+        print "Align complete (%0.2f min)" % ((time()-secs)/60)
     else:
         print "Previously grouped"
-
 
     print "==Creating final groups=="
     secs = time()
