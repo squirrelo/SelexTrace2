@@ -40,8 +40,8 @@ if __name__ == "__main__":
         help="Simmilarity for uclust. (Default 0.99)")
     parser.add_argument('--minseqs', type=int, default=100,
         help="Min number of seqs for group to be significant (Default 100)")
-    parser.add_argument('--csc', type=float, default=0.9,
-        help="Score cutoff for clustering (Default 0.9)")
+    parser.add_argument('--csc', type=float, default=0.75,
+        help="Score cutoff for clustering (Default 0.75)")
     parser.add_argument('--isc', type=int, default=80,
         help="Score cutoff for Infernal. (Default 80)")
     parser.add_argument('--fsc', type=int, default=150,
