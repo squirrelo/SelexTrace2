@@ -9,10 +9,10 @@ from traceback import format_exc
 
 from cogent import LoadSeqs, RNA
 from cogent.core.sequence import RnaSequence
-from cogent.app.infernal_v11 import (cmsearch_from_file, cmbuild_from_file,
-                                     calibrate_file)
+from cogent.app.infernal_v11 import (cmsearch_from_file, calibrate_file)
 from cogent.parse.fasta import MinimalFastaParser
 from cogent.format.stockholm import stockholm_from_alignment
+from cogent.app.muscle_v38 import align_unaligned_seqs
 from nwalign import global_align, score_alignment
 
 from bayeswrapper import bayesfold
@@ -282,19 +282,17 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
         return grouped
 
 
-def final_fold(seqs, params, outfolder, group, fold=True):
-            if exists("%sgroup_%i.fasta" % (outfolder, group)):
-                return
-            if fold:
-                aln, struct = bayesfold(seqs, params=params)
-            else:
-                aln = LoadSeqs(data=seqs, moltype=RNA)
-            aln.Names.sort(reverse=True, key=lambda c: count_seqs(c))
-            fout = open("%sgroup_%i.fasta" % (outfolder, group), 'w')
-            fout.write(aln.toFasta() + "\n")
-            if fold:
-                fout.write(">SS_Struct\n%s\n" % struct)
-            fout.close()
+def align_order_seqs(seqs, params, outfolder, group):
+    try:
+        if exists("%sgroup_%i.fasta" % (outfolder, group)):
+            return
+        aln = align_unaligned_seqs(seqs, RNA, params=params)
+        aln.Names.sort(reverse=True, key=lambda c: count_seqs(c))
+        fout = open("%sgroup_%i.fasta" % (outfolder, group), 'w')
+        fout.write(aln.toFasta() + "\n")
+        fout.close()
+    except Exception, e:
+        print "align_order_seqs:", format_exc(e)
 
 
 def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
@@ -306,65 +304,91 @@ def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
         currotufolder = basefolder + currgroup
         if exists(currotufolder):
             return
-        seqs = []
+
+        #load seqs and make sure we have enough
+        aln = LoadSeqs(groupfasta, moltype=RNA, aligned=True)
+        count = count_seqs(aln.Names)
+        if count < minseqs:
+            return
+        #get weights for each sequence. weight==count
         weights = []
         maxweight = 0
-        count = 0
-        fin = open(groupfasta, 'rU')
-        for header, seq in MinimalFastaParser(fin):
-            if header == "SS_Struct":
-                struct = seq
-                continue
-            seqs.append((header.split()[0], seq.strip()))
+        for header in aln.Names:
             weight = count_seqs(header)
-            count += weight
             if weight > maxweight:
                 maxweight = weight
             weights.append(header.split()[0])
             weights.append(str(weight))
-        fin.close()
-        aln = LoadSeqs(data=seqs, moltype=RNA)
-        del seqs
-        if count < minseqs:
-            return
+
+        #fold alignment with bayesfold
+        aln, struct = bayesfold(aln, align=False)
+
+        #write log information
         mkdir(currotufolder)
-        out = ' '.join([currgroup, ":\n", str(count),
-                        "sequences\n", str(aln.getNumSeqs()),
-                        "unique sequences\nStructure: ", struct, "\n"])
+        with open(currotufolder + "/log.txt", 'w') as logout:
+            logout.write(' '.join([currgroup, ":\n", str(count),
+                         "sequences\n", str(aln.getNumSeqs()),
+                         "unique sequences\nStructure: ", struct, "\n"]))
         #write out alignment and structure in fasta format
-        logout = open(currotufolder + "/log.txt", 'w')
-        logout.write(out)
-        logout.close()
         with open(currotufolder + "/bayesfold-aln.fasta", 'w') as alnout:
             alnout.write(">SS_struct\n%s\n%s" % (struct, aln.toFasta()))
 
+        #shave off info in header for stockholm
+        aln = LoadSeqs(data=aln, moltype=RNA, 
+                       label_to_name=lambda x: x.split()[0])
+        #create stockholm formatted alignment
+        sto = stockholm_from_alignment(aln, GC_annotation={'SS_cons': struct})
+        del aln
         #create standard weights for infernal
         infweights = ""
         for pos in range(0, len(weights), 2):
             infweights = ''.join([infweights, '#GS\t%s\tWT\t%s\n' %
                                  (weights[pos],
                                   str(float(weights[pos+1]) / maxweight))])
-        #create weights in for r2r
-        r2r_weights = "#=GF USE THIS WEIGHT MAP " + ' '.join(weights)
+        #create weights for r2r
+        r2r_weights = "#=GF USE_THIS_WEIGHT_MAP " + ' '.join(weights)
         #create sto file with r2r and std weights
-        sto = stockholm_from_alignment(aln, GC_annotation={'SS_cons': struct})
         sto = sto.split("\n")
-        sto[-1] = infweights
-        sto.append(r2r_weights + "\n")
+        sto[-1] = infweights.strip()
+        sto.append(r2r_weights)
         sto.append("//\n")
         stofile = currotufolder + "/bayesfold-aln.sto"
         with open(stofile, 'w') as alnout:
             alnout.write('\n'.join(sto))
 
         #make R2R secondary structure for alignment
-        make_r2r(currotufolder+"/bayesfold-aln.sto", currotufolder, currgroup)
+        make_r2r(stofile, currotufolder, currgroup)
         #create CM file for infernal from group
-        with open(currotufolder + "/cmfile.cm", 'w') as fout:
-            fout.write(cmbuild_from_file(stofile, params={'--wgiven': True}))
-        calibrate_file(currotufolder + "cmfile.cm", cpus=cpus)
+        cmbuild_from_file(stofile, currotufolder + "/cmfile.cm",
+                          params={'--wgiven': True})
+        calibrate_cmfile(currotufolder + "/cmfile.cm", cpus=cpus)
     except Exception, e:
         print "create_group_output:\n", format_exc(e)
         stdout.flush()
+
+def cmbuild_from_file(aln, cmout, params=None):
+    if params is None:
+        params = {}
+    command = ["cmbuild"]
+    for param in params:
+        command.append(param)
+        if not isinstance(params[param], bool):
+            command.append(params[param])
+    command.append(cmout)
+    command.append(aln)
+    p = Popen(command, stdout=PIPE, stderr=PIPE)
+    retcode = p.wait()
+    if retcode != 0:
+        raise RuntimeError("CM file build failed! %s" % p.stderr)
+
+def calibrate_cmfile(cmfile, cpus=1):
+    if not exists(cmfile):
+        raise IOError("cmfile does not exist: %s" % cmfile)
+    command = ["cmcalibrate", "--cpu", str(cpus), cmfile]
+    p = Popen(command, stdout=PIPE, stderr=PIPE)
+    retcode = p.wait()
+    if retcode != 0:
+        raise RuntimeError("CM file calibration failed! %s" % ''.join(p.stderr))
 
 
 def make_r2r(insto, outfolder, group):
@@ -441,7 +465,8 @@ def group_by_forester(fulldict, foresterscore, cpus=1):
     return fulldict
 
 
-def run_infernal(cmfile, rnd, basefolder, outfolder, cpus=1, score=0.0):
+def run_infernal(cmfile, rnd, basefolder, outfolder, cpus=1, score=0.0,
+                 calibrate=False):
     seqs = 0
     #Only search unique sequences to save time
     #check if previous run has removed some sequences, load correct file
@@ -458,8 +483,11 @@ def run_infernal(cmfile, rnd, basefolder, outfolder, cpus=1, score=0.0):
         raise IOError("Round's fasta file does not exist!")
     params = {'--mid': True, '--Fmid': 0.0002, '--notrunc': True,
               '--toponly': True, '--cpu': cpus}  # '-g': True,
+    if calibrate:
+        calibrate_file(cmfile, cpus=cpus)
     result = cmsearch_from_file(cmfile, seqs, RNA, cutoff=score,
                                 params=params)
+    print cmfile.split("/")[-2], " >> Round", rnd, ":", len(result), "hits"
     with open("%s/R%ihits.fna" % (outfolder, rnd), 'w') as fout:
         for hit in result:
             fout.write(">%s score:%0.1f e-val:%f\n%s\n" % (hit[0], hit[14],

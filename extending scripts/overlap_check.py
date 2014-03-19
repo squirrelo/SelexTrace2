@@ -2,7 +2,7 @@ from sys import argv
 from os import walk
 from os.path import exists
 from os import walk
-from numpy import zeros
+from numpy import empty
 
 from cogent.parse.fasta import MinimalFastaParser
 
@@ -33,30 +33,23 @@ if __name__ == "__main__":
         overlapfile.write(groups[x] + ",")
     overlapfile.write("\n")
     #compare all group sequences to other sequences
-    countmatrix = zeros(shape=(sizegroups, sizegroups), dtype=int)
-    for group, gfile in enumerate(groups):
-        if not exists(basefolder + gfile + "/" + rnd + "hits.fna"):
-            #write empty row for group
-            overlapfile.write(gfile + ",")
-            for x in range(sizegroups):
-                overlapfile.write("-,")
-                countmatrix[group][x] = -1
-            overlapfile.write("\n")
-            continue
+    countmatrix = empty(shape=(sizegroups, sizegroups), dtype=int)
+    countmatrix.fill(-1)
+    for group, gfolder in enumerate(groups):
         #write out groupname to csv file as row indicator
-        overlapfile.write(gfile + ",")
+        overlapfile.write(gfolder + ",")
 
         #compare seq counts over all groups
         for x in range(group):
             overlapfile.write("-,")
         #load in headers of current group
         headers = set([])
-        firstgroup = open(basefolder + gfile + "/" + rnd + "hits.fna")
+        firstgroup = open(basefolder + gfolder + "/" + rnd + "hits.fna")
         #get rid of header
         for header, seq in MinimalFastaParser(firstgroup):
             headers.add(header.split(" ")[0])
         firstgroup.close()
-        dupefile = open(basefolder + gfile + "/" + rnd + "dupes.fna", 'w')
+        dupefile = open(basefolder + gfolder + "/" + rnd + "dupes.txt", 'w')
         #go through all other groups and compare sequence headers
         for secgroup in range(group, sizegroups):
             if not exists(basefolder + groups[secgroup] + "/" + rnd + "hits.fna"):
@@ -64,7 +57,7 @@ if __name__ == "__main__":
                 overlapfile.write("-,")
                 continue
             count = 0
-            if gfile != groups[secgroup]:  # only do comparison if needed
+            if gfolder != groups[secgroup]:  # only do comparison if needed
                 compfile = open(basefolder + groups[secgroup] + "/" + rnd + "hits.fna")
                 dupefile.write(groups[secgroup] + "\n")
                 for header, seq in MinimalFastaParser(compfile):
@@ -89,7 +82,9 @@ if __name__ == "__main__":
 
             groupcount = float(countmatrix[group][group])
             for secgroup in range(group, sizegroups):
+                print "SECGROUP: ", countmatrix[group][secgroup]
                 if countmatrix[group][secgroup] != -1:
+                    print countmatrix[group][secgroup]/groupcount*100
                     overlapfile.write(str(countmatrix[group][secgroup]/groupcount*100) + ",")
                 else:
                     overlapfile.write("-,")

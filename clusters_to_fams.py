@@ -21,9 +21,9 @@ from cogent.parse.fasta import MinimalFastaParser
 from cogent import LoadSeqs, RNA
 
 from selextrace.stutils import cluster_seqs, count_seqs
-from selextrace.ctilib import (fold_clusters, create_group_output, final_fold,
+from selextrace.ctilib import (fold_clusters, create_group_output,
                                group_by_seqstruct, group_by_forester, 
-                               run_infernal)
+                               align_order_seqs, run_infernal)
 
 if __name__ == "__main__":
     starttime = time()
@@ -195,7 +195,7 @@ if __name__ == "__main__":
         hold = group_by_seqstruct(structgroups, clustscore, cpus=args.c,
                                   setpercent=0.01)
         print "%i end groups (%0.2f hrs)" % (len(hold), (time()-secs)/3600)
-        print "Align and fold end groups"
+        print "Align end groups"
 
         secs = time()
         #collect all structs together and post-process them.
@@ -203,6 +203,8 @@ if __name__ == "__main__":
         mkdir(outfolder + "fasta_groups")
         params = {"-diags": True, "-maxiters": 5}
         pool = Pool(processes=args.c)
+        #need to use fasta string because pycogent sequence collections 
+        #HATE multithreading so can't use them
         for num, struct in enumerate(hold):
             count = 0
             seqs = structgroups[struct].degap().toFasta() + "\n"
@@ -212,21 +214,20 @@ if __name__ == "__main__":
                                 structgroups[substruct].degap().toFasta(),
                                 "\n"])
                 count += count_seqs(structgroups[substruct].Names)
-            pool.apply_async(func=final_fold, args=(seqs, params,
+            pool.apply_async(func=align_order_seqs, args=(seqs, params,
                                                     outfolder+"/fasta_groups/",
-                                                    num,
-                                                    count >= args.minseqs))
+                                                    num))
             #final_fold(seqs, params, outfolder + "fasta_groups/", num)
         hold.clear()
         del hold
         pool.close()
         pool.join()
-        print  "Folding complete (%0.2f min)" % ((time()-secs)/60)
+        print  "Align complete (%0.2f min)" % ((time()-secs)/60)
     else:
         print "Previously grouped"
 
 
-    print "==Creating CM and r2r structures=="
+    print "==Creating final groups=="
     secs = time()
     #smaller pool for memeory savings, 1 task per child to try and gc each run
     #NEED TO FIX BAYESFOLD ARRAY2D BEING A MEMORY HOG
@@ -235,7 +236,7 @@ if __name__ == "__main__":
     for group in walk(outfolder + "fasta_groups").next()[2]:
         pool.apply_async(func=create_group_output,
                          args=(outfolder+"fasta_groups/"+group, outfolder,
-                               args.minseqs, args.c))
+                               args.minseqs))
     pool.close()
     pool.join()
 
