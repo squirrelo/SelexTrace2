@@ -331,7 +331,7 @@ def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
                          "unique sequences\nStructure: ", struct, "\n"]))
         #write out alignment and structure in fasta format
         with open(currotufolder + "/bayesfold-aln.fasta", 'w') as alnout:
-            alnout.write(">SS_struct\n%s\n%s" % (struct, aln.toFasta()))
+            alnout.write(">SS_cons\n%s\n%s" % (struct, aln.toFasta()))
 
         #shave off info in header for stockholm
         aln = LoadSeqs(data=aln, moltype=RNA, 
