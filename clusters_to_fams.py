@@ -231,12 +231,18 @@ if __name__ == "__main__":
     secs = time()
     #smaller pool for memeory savings, 1 task per child to try and gc each run
     #NEED TO FIX BAYESFOLD ARRAY2D BEING A MEMORY HOG
-    pool = Pool(processes=args.c, maxtasksperchild=1)
+    procs = args.c / 4
+    if procs < 1:
+        procs = 1
+    cpus = args.c / procs
+    if cpus < 1:
+        cpus = 1
+    pool = Pool(processes=procs, maxtasksperchild=1)
     #run the pool over all groups to get final structures
     for group in walk(outfolder + "fasta_groups").next()[2]:
         pool.apply_async(func=create_group_output,
                          args=(outfolder+"fasta_groups/"+group, outfolder,
-                               args.minseqs))
+                               args.minseqs, cpus))
     pool.close()
     pool.join()
 
