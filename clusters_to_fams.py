@@ -18,11 +18,12 @@ from multiprocessing import Pool, Manager
 
 from cogent.parse.fasta import MinimalFastaParser
 from cogent import LoadSeqs, RNA
+from numpy import empty
 
 from selextrace.stutils import cluster_seqs, count_seqs
-from selextrace.ctilib import (fold_clusters, create_group_output,
+from selextrace.ctilib import (fold_clusters, create_final_output,
                                group_by_seqstruct, group_by_forester,
-                               align_order_seqs, run_infernal)
+                               align_order_seqs, run_infernal, create_families)
 
 if __name__ == "__main__":
     starttime = time()
@@ -238,7 +239,7 @@ if __name__ == "__main__":
     pool = Pool(processes=procs, maxtasksperchild=1)
     #run the pool over all groups to get final structures
     for group in walk(outfolder + "fasta_groups").next()[2]:
-        pool.apply_async(func=create_group_output,
+        pool.apply_async(func=create_final_output,
                          args=(outfolder+"fasta_groups/"+group, outfolder,
                                args.minseqs, cpus))
     pool.close()
@@ -248,7 +249,8 @@ if __name__ == "__main__":
     grouporder = []
     groups = {}
     count = 0
-    for group in walk(outfolder).next()[1]:
+    groupslist = [g for g in walk(outfolder).next()[1] if "group_" in g]
+    for group in groupslist:
         if group == "fasta_groups":
             continue
         count += 1
@@ -274,30 +276,74 @@ if __name__ == "__main__":
     print count, "final groups"
     print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
 
-    print "===Running Infernal for groups==="
-    print "infernal score cutoff: ", args.isc
-
-    for group in walk(outfolder).next()[1]:
+    print "==Creating families from groups=="
+    secs = time()
+    groups = walk(outfolder).next()[1]
+    uniques_remain_file = "%sR%i/R%i-Unique-Remaining.fasta" % (basefolder,
+                                                                args.r, args.r)
+    uniques_file = "%sR%i/R%i-Unique.fasta" % (basefolder, args.r, args.r)
+    if exists(uniques_remain_file):
+        seqs = LoadSeqs(uniques_remain_file, moltype=RNA, aligned=False)
+    elif exists(uniques_file):
+        seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
+    else:
+        raise IOError("Round's fasta file does not exist!")
+    for group in groups:
+        #run infernal over current round for all groups
         if group == "fasta_groups":
             continue
-        for rnd in range(1, args.r+1):
-            run_infernal("%s%s/cmfile.cm" % (outfolder, group), rnd,
-                         basefolder, outfolder + group+"/", cpus=args.c,
-                         score=args.isc)
+        run_infernal("%s%s/cmfile.cm" % (outfolder, group), args.r, seqs,
+                     outfolder + group + "/", cpus=args.c, score=args.isc)
+    del seqs
 
-    print "==Creating families from groups=="
-    print "RNAforester score cutoff:", args.fsc
-    print len(groups), "initial groups"
-    #Now group by forester local aignment to get larger families grouped
-    groups = group_by_forester(groups, args.fsc, args.c)
-    fout = open(outfolder + "families.txt", 'w')
-    for fam in groups:
-        fout.write("\t".join(groups[fam]) + "\n")
-    fout.close()
-    print len(groups), "final families"
-    print "Runtime: " + str((time() - secs) / 3600) + " hrs"
-    groups.clear()
-    del groups
+    #get families and write out families list
+    families = create_families(outfolder, args.r, outfile="family_matrix.txt")
+    print len(families), "families"
+    with open(outfolder + "families.txt", 'w') as fout:
+        for famnum, family in enumerate(families):
+            fout.write("fam_%i\n" % famnum)
+            fout.write('\n'.join(family) + '\n')
 
+    fambase = outfolder + "fasta_families/"
+    mkdir(fambase)
+    for famnum, family in enumerate(families):
+        #combine all seqs for family. Abusing alignment obj for removing gaps
+        #need to use fasta because pycogent addSeqs does not cooperate if not
+        #alignment and all seqs same length
+        famseqs = LoadSeqs("%sfasta_groups/%s.fna" % (outfolder, family[0]),
+                           moltype=RNA).degap().toFasta() + "\n"
+        for group in family[1:]:
+            groupseqsfile = "%sfasta_groups/%s.fna" % (outfolder, group)
+            if not exists(groupseqsfile):
+                raise IOError("FASTA NOT FOUND: %s" % groupseqsfile)
+            famseqs += LoadSeqs(groupseqsfile, moltype=RNA).degap().toFasta()\
+                       + "\n"
+        #fold family sequences 
+        params = {"-diags": True, "-maxiters": 5}
+        align_order_seqs(famseqs, params, fambase, famnum, prefix="fam_")
+        create_final_output("%sfam_%i.fna" % (fambase, famnum), outfolder,
+                            args.minseqs, args.c)
+
+    print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
+
+    print "===Running Infernal for families==="
+    print "infernal score cutoff: ", args.isc
+    secs = time()
+    fams = [folder for folder in walk(outfolder).next()[1] if "fam_" in folder]
+    for rnd in range(1, args.r+1):
+        uniques_remain_file = "%sR%i/R%i-Unique-Remaining.fasta" % (basefolder,
+                                                                    rnd, rnd)
+        uniques_file = "%sR%i/R%i-Unique.fasta" % (basefolder, rnd, rnd)
+        if exists(uniques_remain_file):
+            seqs = LoadSeqs(uniques_remain_file, moltype=RNA, aligned=False)
+        elif exists(uniques_file):
+            seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
+        else:
+            raise IOError("Round's fasta file does not exist!")
+        for fam in fams:
+            run_infernal("%s/cmfile.cm" % famfolder, rnd, seqs, famfolder,
+                         cpus=args.c, score=args.isc)
+
+    print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
     endtime = (time() - starttime)/3600
     print "Program ended", datetime.now(), " Runtime:", endtime, "hrs"

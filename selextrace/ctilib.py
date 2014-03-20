@@ -1,6 +1,6 @@
 from sys import stdout
 from os.path import exists, dirname, abspath
-from os import mkdir
+from os import mkdir, walk
 from subprocess import Popen, PIPE
 from math import ceil
 from random import shuffle
@@ -10,8 +10,10 @@ from traceback import format_exc
 from cogent import LoadSeqs, RNA
 from cogent.app.infernal_v11 import (cmsearch_from_file, calibrate_file)
 from cogent.format.stockholm import stockholm_from_alignment
+from cogent.parse.fasta import MinimalFastaParser
 from cogent.app.muscle_v38 import align_unaligned_seqs
 from nwalign import global_align, score_alignment
+from numpy import empty, savetxt
 
 from bayeswrapper import bayesfold
 from selextrace.stutils import count_seqs
@@ -280,89 +282,82 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
         return grouped
 
 
-def align_order_seqs(seqs, params, outfolder, group):
-    try:
-        if exists("%sgroup_%i.fasta" % (outfolder, group)):
-            return
-        aln = align_unaligned_seqs(seqs, RNA, params=params)
-        aln.Names.sort(reverse=True, key=lambda c: count_seqs(c))
-        fout = open("%sgroup_%i.fasta" % (outfolder, group), 'w')
-        fout.write(aln.toFasta() + "\n")
-        fout.close()
-    except Exception, e:
-        print "align_order_seqs:", format_exc(e)
+def align_order_seqs(seqs, params, outfolder, num, prefix="group_"):
+    if exists("%s%s%i.fna" % (outfolder, prefix, num)):
+        return
+    aln = align_unaligned_seqs(seqs, RNA, params=params)
+    aln.Names.sort(reverse=True, key=lambda c: count_seqs(c))
+    fout = open("%s%s%i.fna" % (outfolder, prefix, num), 'w')
+    fout.write(aln.toFasta() + "\n")
+    fout.close()
 
 
-def create_group_output(groupfasta, basefolder, minseqs=1, cpus=1):
+def create_final_output(groupfasta, basefolder, minseqs=1, cpus=1):
     '''Function for multithreading. Creates the final BayesFold alignment and
     writes to files, then r2r struct and infernal CM file'''
-    try:
-        #skip if already run and program just crashed or whatever
-        currgroup = groupfasta.split("/")[-1].split(".")[0]
-        currotufolder = basefolder + currgroup
-        if exists(currotufolder):
-            return
+    #skip if already run and program just crashed or whatever
+    currgroup = groupfasta.split("/")[-1].split(".")[0]
+    currotufolder = basefolder + currgroup
+    if exists(currotufolder):
+        return
 
-        #load seqs and make sure we have enough
-        aln = LoadSeqs(groupfasta, moltype=RNA, aligned=True)
-        count = count_seqs(aln.Names)
-        if count < minseqs:
-            return
-        #get weights for each sequence. weight==count
-        weights = []
-        maxweight = 0
-        for header in aln.Names:
-            weight = count_seqs(header)
-            if weight > maxweight:
-                maxweight = weight
-            weights.append(header.split()[0])
-            weights.append(str(weight))
+    #load seqs and make sure we have enough
+    aln = LoadSeqs(groupfasta, moltype=RNA, aligned=True)
+    count = count_seqs(aln.Names)
+    if count < minseqs:
+        return
+    #get weights for each sequence. weight==count
+    weights = []
+    maxweight = 0
+    for header in aln.Names:
+        weight = count_seqs(header)
+        if weight > maxweight:
+            maxweight = weight
+        weights.append(header.split()[0])
+        weights.append(str(weight))
 
-        #fold alignment with bayesfold
-        aln, struct = bayesfold(aln, align=False)
+    #fold alignment with bayesfold
+    aln, struct = bayesfold(aln, align=False)
 
-        #write log information
-        mkdir(currotufolder)
-        with open(currotufolder + "/log.txt", 'w') as logout:
-            logout.write(' '.join([currgroup, ":\n", str(count),
-                         "sequences\n", str(aln.getNumSeqs()),
-                         "unique sequences\nStructure: ", struct, "\n"]))
-        #write out alignment and structure in fasta format
-        with open(currotufolder + "/bayesfold-aln.fasta", 'w') as alnout:
-            alnout.write(">SS_cons\n%s\n%s" % (struct, aln.toFasta()))
+    #write log information
+    mkdir(currotufolder)
+    with open(currotufolder + "/log.txt", 'w') as logout:
+        logout.write(' '.join([currgroup, ":\n", str(count),
+                     "sequences\n", str(aln.getNumSeqs()),
+                     "unique sequences\nStructure: ", struct, "\n"]))
+    #write out alignment and structure in fasta format
+    with open(currotufolder + "/bayesfold-aln.fasta", 'w') as alnout:
+        alnout.write(">SS_cons\n%s\n%s" % (struct, aln.toFasta()))
 
-        #shave off info in header for stockholm
-        aln = LoadSeqs(data=aln, moltype=RNA,
-                       label_to_name=lambda x: x.split()[0])
-        #create stockholm formatted alignment
-        sto = stockholm_from_alignment(aln, GC_annotation={'SS_cons': struct})
-        del aln
-        #create standard weights for infernal
-        infweights = ""
-        for pos in range(0, len(weights), 2):
-            infweights = ''.join([infweights, '#GS\t%s\tWT\t%s\n' %
-                                 (weights[pos],
-                                  str(float(weights[pos+1]) / maxweight))])
-        #create weights for r2r
-        r2r_weights = "#=GF USE_THIS_WEIGHT_MAP " + ' '.join(weights)
-        #create sto file with r2r and std weights
-        sto = sto.split("\n")
-        sto[-1] = infweights.strip()
-        sto.append(r2r_weights)
-        sto.append("//\n")
-        stofile = currotufolder + "/bayesfold-aln.sto"
-        with open(stofile, 'w') as alnout:
-            alnout.write('\n'.join(sto))
+    #shave off info in header for stockholm
+    aln = LoadSeqs(data=aln, moltype=RNA,
+                   label_to_name=lambda x: x.split()[0])
+    #create stockholm formatted alignment
+    sto = stockholm_from_alignment(aln, GC_annotation={'SS_cons': struct})
+    del aln
+    #create standard weights for infernal
+    infweights = ""
+    for pos in range(0, len(weights), 2):
+        infweights = ''.join([infweights, '#=GS %s WT %s\n' %
+                             (weights[pos],
+                              str(float(weights[pos+1]) / maxweight))])
+    #create weights for r2r
+    r2r_weights = "#=GF USE_THIS_WEIGHT_MAP " + ' '.join(weights)
+    #create sto file with r2r and std weights
+    sto = sto.split("\n")
+    sto[-1] = infweights.strip()
+    sto.append(r2r_weights)
+    sto.append("//\n")
+    stofile = currotufolder + "/bayesfold-aln.sto"
+    with open(stofile, 'w') as alnout:
+        alnout.write('\n'.join(sto))
 
-        #make R2R secondary structure for alignment
-        make_r2r(stofile, currotufolder, currgroup)
-        #create CM file for infernal from group
-        cmbuild_from_file(stofile, currotufolder + "/cmfile.cm",
-                          params={'--wgiven': True})
-        calibrate_cmfile(currotufolder + "/cmfile.cm", cpus=cpus)
-    except Exception, e:
-        print "create_group_output:\n", format_exc(e)
-        stdout.flush()
+    #make R2R secondary structure for alignment
+    make_r2r(stofile, currotufolder, currgroup)
+    #create CM file for infernal from group
+    cmbuild_from_file(stofile, currotufolder + "/cmfile.cm",
+                      params={'--wgiven': True})
+    calibrate_cmfile(currotufolder + "/cmfile.cm", cpus=cpus)
 
 
 def cmbuild_from_file(aln, cmout, params=None):
@@ -465,29 +460,19 @@ def group_by_forester(fulldict, foresterscore, cpus=1):
     return fulldict
 
 
-def run_infernal(cmfile, rnd, basefolder, outfolder, cpus=1, score=0.0,
+def run_infernal(cmfile, rnd, seqs, outfolder, cpus=1, score=0.0,
                  calibrate=False):
-    seqs = 0
-    #Only search unique sequences to save time
-    #check if previous run has removed some sequences, load correct file
+    if exists("%s/R%ihits.fna" % (outfolder, rnd)):
+        return
     if not exists(cmfile):
         raise IOError("cmfile path provided does not exist: %s" % cmfile)
-    uniques_remain_file = ''.join([basefolder, "R", str(rnd), "/R", str(rnd),
-                                   "-Unique-Remaining.fasta"])
-    uniques_file = "%sR%i/R%i-Unique.fasta" % (basefolder, rnd, rnd)
-    if exists(uniques_remain_file):
-        seqs = LoadSeqs(uniques_remain_file, moltype=RNA, aligned=False)
-    elif exists(uniques_file):
-        seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
-    else:
-        raise IOError("Round's fasta file does not exist!")
+
     params = {'--mid': True, '--Fmid': 0.0002, '--notrunc': True,
               '--toponly': True, '--cpu': cpus}  # '-g': True,
     if calibrate:
         calibrate_file(cmfile, cpus=cpus)
     result = cmsearch_from_file(cmfile, seqs, RNA, cutoff=score,
                                 params=params)
-    print cmfile.split("/")[-2], " >> Round", rnd, ":", len(result), "hits"
     with open("%s/R%ihits.fna" % (outfolder, rnd), 'w') as fout:
         for hit in result:
             fout.write(">%s score:%0.1f e-val:%f\n%s\n" % (hit[0], hit[14],
@@ -496,3 +481,77 @@ def run_infernal(cmfile, rnd, basefolder, outfolder, cpus=1, score=0.0,
     if exists("%s/log.txt" % outfolder):
         with open("%s/log.txt" % outfolder, 'a') as fout:
             fout.write("Round %i: %i hits\n" % (rnd, len(result)))
+
+def calculate_overlap(basefolder, rnd):
+    basefolder = basefolder.strip()
+    if basefolder[:-1] != "/":
+        basefolder += "/"
+
+    #get list of groups
+    groups = walk(basefolder).next()[1]
+    if "fasta_groups" in groups:
+        groups.remove("fasta_groups")
+    sizegroups = len(groups)
+
+    #compare all group sequences to other sequences
+    overlapmatrix = empty(shape=(sizegroups, sizegroups), dtype=float)
+    overlapmatrix.fill(-1.0)
+    for group, gfolder in enumerate(groups):
+
+        #load in headers of current group
+        headers = set([])
+        firstgroup = open("%s%s/R%ihits.fna" % (basefolder, gfolder, rnd))
+        for header, seq in MinimalFastaParser(firstgroup):
+            headers.add(header.split(" ")[0])
+        firstgroup.close()
+        groupsize = float(len(headers))
+        overlapmatrix[group][group] = 1.0
+        #go through all other groups and compare sequence headers
+        for secgroup in range(group+1, sizegroups):
+            secgroupfile = "%s%s/R%ihits.fna" % (basefolder, groups[secgroup],
+                                                rnd)
+            if not exists(secgroupfile):
+                raise IOError("File not found: %s" % secgroupfile)
+            count = 0
+            compfile = open(secgroupfile)
+            for header, seq in MinimalFastaParser(compfile):
+                if header.split(" ")[0] in headers:
+                    count += 1
+            compfile.close()
+            overlapmatrix[group][secgroup] = count / groupsize
+
+    return groups, overlapmatrix
+
+
+def create_families(basefolder, rnd, outfile=None, fam_cutoff=0.9):
+    basefolder = basefolder.strip()
+    if basefolder[-1] != "/":
+        basefolder += "/"
+    groups, overlap = calculate_overlap(basefolder, rnd)
+    families = []
+    for rowpos, row in enumerate(overlap):
+        currgroup = groups[rowpos]
+        currpos = -1
+        #find position for family with current group, or new family if needed
+        for pos, fam in enumerate(families):
+            if currgroup in fam:
+                currpos = pos
+                break
+        if currpos == -1:
+            #not found so new family
+            currpos = len(families)
+            families.append(set([groups[rowpos]]))
+        for colpos, percent in enumerate(row):
+            if percent > fam_cutoff:
+                famgroup = groups[colpos]
+                families[currpos].add(groups[colpos])
+    #turn sets to lists for returning
+    for pos in range(0, len(families)):
+        families[pos] = list(families[pos])
+    if outfile is not None:
+        savetxt(basefolder+outfile, overlap, delimiter="\t",
+                header="\t".join(groups))
+    return families
+
+
+
