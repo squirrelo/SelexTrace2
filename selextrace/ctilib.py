@@ -19,14 +19,14 @@ from bayeswrapper import bayesfold
 from selextrace.stutils import count_seqs
 
 
-def fold_clusters(lock, cluster, seqs, otufolder):
+def fold_clusters(lock, cluster, seqs, otufile):
     '''Function for multithreading.
     Computes structure for a cluster and writes it to file'''
     aln, struct = bayesfold(seqs, params={"-diags": True})
     #write structure out to file
     try:
         lock.acquire()
-        cfo = open(otufolder + "cluster_structs.fasta", 'a')
+        cfo = open(otufile, 'a')
         cfo.write(">%s\n%s\n" % (cluster, struct))
         cfo.write(aln.toFasta() + "\n")
         cfo.close()
@@ -34,16 +34,70 @@ def fold_clusters(lock, cluster, seqs, otufolder):
     except Exception:
         lock.release()
 
+def write_clusters(clusters, cout):
+    """ writes out cluster fasta file
+    INPUT
+    -----
+    clusters: dict of list of tuples
+        holds all clusters found
+    cout: open file object
+        open file to write into
+    """
+    hold = clusters.keys()
+    hold.sort()
+    cout.write(str(len(clusters)) + "\n")
+    for cluster in hold:
+        cout.write(">%s\n%s\n" % (cluster, cluster))
+        for header, seq in clusters[cluster]:
+            cout.write(">%s\n%s\n" % (header, seq))
+
+def read_clusters(cfo):
+    numclusts = int(cfo.readline().strip())
+    currclust = ""
+    clusters = {}
+    for header, seq in MinimalFastaParser(cfo):
+        if "cluster_" in header:
+            currclust = header
+            clusters[currclust] = []
+        else:
+            clusters[currclust].append((header, seq))
+
+    return clusters, numclusts
+
+
+def create_seqstructs(cfo, numclusts):
+    seqstructs = []
+    #read in first cluster and struct
+    currclust = cfo.readline().strip(">").strip()
+    struct = cfo.readline().strip()
+    seqs = []
+    for header, seq in MinimalFastaParser(cfo):
+        if "cluster_" in header:
+            aln = LoadSeqs(data=seqs, moltype=RNA)
+            seqstructs.append(SeqStructure(struct,
+                                           ''.join(aln.majorityConsensus()),
+                                           currclust))
+            #move on to next structgroup
+            struct = seq
+            seqs = []
+            currclust = header
+        else:
+            seqs.append((header, seq))
+    aln = LoadSeqs(data=seqs, moltype=RNA)
+    seqstructs.append(SeqStructure(struct, ''.join(aln.majorityConsensus()),
+                                   currclust))
+    if len(seqstructs) != numclusts:
+        raise AssertionError("%i structures, %i clusters. Not all clusters "
+                             "folded!" % (len(seqstructs), numclustss))
+    return seqstructs
 
 class SeqStructure(object):
-    def __init__(self, structure, seq=None):
+    def __init__(self, structure, seq, name):
         self.struct = structure
-        self.seq = None
+        self.seq = seq
+        self.name = name
         self._structmap = self._create_structmap(structure)
-        self._seqmap = None
-        if seq is not None:
-            self.add_seqmap(seq)
-            self.seq = seq
+        self._seqmap = self._create_seqmap(seq)
 
         self.pairs = ('AU', 'UA', 'GC', 'CG', 'GU', 'UG')
 
@@ -69,15 +123,14 @@ class SeqStructure(object):
                 structmap.append((p1, pos))
         return structmap
 
-    def add_seqmap(self, seq):
+    def _create_seqmap(self, seq):
         if len(seq) != len(self.struct):
             raise ValueError("sequence must be same length as structure!")
         seqmap = []
         for p1, p2 in self._structmap:
             pair = seq[p1] + seq[p2]
             seqmap.append((p1, p2, pair))
-        self._seqmap = seqmap
-        self.seq = seq
+        return seqmap
 
     def score_seq(self, seq):
         """Scores sequence based on how well it fits into given seq/struct map.
@@ -210,12 +263,12 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
                          currnonref.score_seq(seq2))/3
                 if score >= bestscore:
                     bestscore = score
-                    bestref = refstruct.struct
+                    bestref = refstruct.name
             if bestref != "":
                 if bestref not in groupstruct:
-                    groupstruct[bestref] = [currnonref.struct]
+                    groupstruct[bestref] = [currnonref.name]
                 else:
-                    groupstruct[bestref].append(currnonref.struct)
+                    groupstruct[bestref].append(currnonref.name)
             else:
                 nogroup.append(currnonref)
     except Exception, e:
@@ -223,11 +276,9 @@ def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
     return groupstruct, nogroup
 
 
-def group_by_seqstruct(structgroups, structscore, specstructs=None,
-                       setpercent=0.01, cpus=1):
+def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
         '''Does grouping by way of de-novo reference creation and clustering
-            structgroups - dictionary with ALL structures and the Alignment
-                           object keyed to them
+            grouping - list of SeqStructure objects to be grouped
             structscore - maximum score to consider grouping structures
             specstructs - a list of a subset of structures in structgroups
                           to cluster (optional)
@@ -235,26 +286,17 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
                            (default 1%  of dict)
         '''
         #fail if nothing to compare
-        if len(structgroups) < 1:
-            raise ValueError("Must have at least one structure to group!")
+        if len(grouping) < 1:
+            raise ValueError("Must have at least one item to group!")
         #return the list directly if only one item (useful for breakout work)
-        if len(structgroups) == 1:
-            return {structgroups.keys()[0]: []}
-        grouping = []
-        if specstructs is None:
-            for currstruct in structgroups:
-                seq = ''.join(structgroups[currstruct].majorityConsensus())
-                grouping.append(SeqStructure(currstruct, seq))
-        else:
-            for currstruct in specstructs:
-                seq = ''.join(structgroups[currstruct].majorityConsensus())
-                grouping.append(SeqStructure(currstruct, seq))
+        if len(grouping) == 1:
+            return {grouping.name: []}
         #create SeqStructures objects for items we are clustering
         #just de-novo group if 20 or less to save time and effort
         if len(grouping) <= 20:
             grouped, ungrouped = group(grouping, structscore)
             for ug in ungrouped:
-                grouped[ug.struct] = []
+                grouped[ug.name] = []
             return grouped
         #for speed, get 1% as initial clustering or user defined.
         #Need at least 5 structs though.
@@ -278,7 +320,7 @@ def group_by_seqstruct(structgroups, structscore, specstructs=None,
         grouped.update(g)
         #add ungroupable bit to end
         for ug in ungrouped:
-            grouped[ug.struct] = []
+            grouped[ug.name] = []
         return grouped
 
 
@@ -287,9 +329,8 @@ def align_order_seqs(seqs, params, outfolder, num, prefix="group_"):
         return
     aln = align_unaligned_seqs(seqs, RNA, params=params)
     aln.Names.sort(reverse=True, key=lambda c: count_seqs(c))
-    fout = open("%s%s%i.fna" % (outfolder, prefix, num), 'w')
-    fout.write(aln.toFasta() + "\n")
-    fout.close()
+    with open("%s%s%i.fna" % (outfolder, prefix, num), 'w') as fout:
+        fout.write(aln.toFasta() + "\n")
 
 
 def create_final_output(groupfasta, basefolder, minseqs=1, cpus=1):
@@ -414,50 +455,6 @@ def make_r2r(insto, outfolder, group):
             p.wait()
     except Exception, e:
         print "r2r: ", format_exc(e)
-
-
-def score_local_rnaforester(struct1, struct2):
-    '''returns local aignment score of two structures'''
-    #return gigantically negative number if no structure for one struct
-    if "(" not in struct1 or "(" not in struct2:
-        raise ValueError("%s\n%s\nNo pairing in structures!" % (struct1,
-                         struct2))
-    p = Popen(["RNAforester", "--score", "-l"], stdin=PIPE, stdout=PIPE)
-    p.stdin.write(''.join([struct1, "\n", struct2, "\n&"]))
-    return int(p.communicate()[0].split("\n")[-2])
-
-
-def score_multi_forester(basestruct, checkstruct, foresterscore):
-    if score_local_rnaforester(basestruct, checkstruct) > foresterscore:
-        return checkstruct
-    else:
-        return ""
-
-
-def group_by_forester(fulldict, foresterscore, cpus=1):
-    structs = fulldict.keys()
-    for pos, currstruct in enumerate(structs):  # for each structure
-        #skip if already grouped
-        if currstruct not in fulldict:
-            continue
-        scores = set([])
-        pool = Pool(processes=cpus)
-        #compare everything as fast as possible using multiprocessing
-        #comparisons end up as set of structs above threshold plus ""
-        for teststruct in structs[pos+1:]:
-            pool.apply_async(func=score_multi_forester,
-                             args=(currstruct, teststruct, foresterscore),
-                             callback=scores.add)
-        pool.close()
-        pool.join()
-        #remove empty and add remaining structs to currgroup
-        if "" in scores:
-            scores.discard("")
-        for struct in scores:
-            if struct in fulldict:
-                fulldict[currstruct].extend(fulldict[struct])
-                fulldict.pop(struct)
-    return fulldict
 
 
 def run_infernal(cmfile, rnd, seqs, outfolder, cpus=1, score=0.0,

@@ -22,8 +22,10 @@ from numpy import empty
 
 from selextrace.stutils import cluster_seqs, count_seqs
 from selextrace.ctilib import (fold_clusters, create_final_output,
-                               group_by_seqstruct, group_by_forester,
-                               align_order_seqs, run_infernal, create_families)
+                               group_by_seqstruct, align_order_seqs, 
+                               run_infernal, create_families,
+                               write_clusters, read_clusters, 
+                               create_seqstructs)
 
 if __name__ == "__main__":
     starttime = time()
@@ -88,138 +90,105 @@ if __name__ == "__main__":
                             "CPUs:\t", str(args.c), "\n"]))
     infofile.close()
     print "==Clustering sequences by primary sequence=="
-    clusters = {}
     secs = time()
-    if exists(outfolder + "cluster_structs.fasta"):
+    clustfile = outfolder + "clusters.txt"
+    structfile = outfolder + "cluster_structs.fasta"
+
+    if exists(structfile):
         #dont need to do anything since already folded by next step
         print "Sequences previously clustered"
-        cin = open(outfolder + "clusters.txt")
-        numclusts = int(cin.readline().strip())
-        cin.close()
-    elif exists(outfolder + "clusters.txt"):
+        with open(clustfile) as fin:
+            numclusts = int(fin.readline().strip())
+    elif exists(clustfile):
         #already clustered but not folded, so read in clusters
-        clustersin = open(outfolder + "clusters.txt")
-        numclusts = int(clustersin.readline().strip())
-        currclust = ""
-        for header, seq in MinimalFastaParser(clustersin):
-            if "cluster_" in header:
-                currclust = header
-                clusters[currclust] = []
-            else:
-                clusters[currclust].append((header, seq))
-        clustersin.close()
-        print "Sequences previously clustered,", numclusts, "clusters"
+        with open(clustfile) as fin:
+            clusters, numclusts = read_clusters(fin)
+        
+        print "Sequences previously clustered, %i clusters" % numclusts
     else:
         print "Running uclust over sequences"
         #cluster the initial sequences by sequence simmilarity
         clusters = cluster_seqs(args.i, args.sim, folderout=args.o,
                                 gapopen='1.0', gapext='1.0')
-
-        #print that shit to file
-        hold = clusters.keys()
-        hold.sort()
-        cout = open(outfolder + "clusters.txt", 'w')
-        cout.write(str(len(clusters)) + "\n")
-        for cluster in hold:
-            cout.write(">%s\n%s\n" % (cluster, cluster))
-            for header, seq in clusters[cluster]:
-                cout.write(">%s\n%s\n" % (header, seq))
-        cout.close()
+        with open(clustfile, 'w') as fout:
+            write_clusters(clusters, fout)
         numclusts = len(clusters)
-        print str(len(clusters)) + " clusters"
+        clusters.clear()
+        del clusters
         print "Runtime: %0.2f min" % ((time() - secs)/60)
 
-    if not exists(outfolder + "cluster_structs.fasta"):
+    if not exists(structfile):
         #create file to write to if not already there
-        with open(outfolder + "cluster_structs.fasta", 'w'):
+        with open(structfile, 'w'):
             pass
-        print "Running BayesFold over " + str(len(clusters)) + " clusters"
+        print "Running BayesFold over %i clusters" % numclusts
         secs = time()
         #make a pool of workers, one for each cpu available
-        #200 tasks per child to force garbage collection, since OSX sucks at it
         manager = Manager()
-        pool = Pool(processes=args.c, maxtasksperchild=200)
+        pool = Pool(processes=args.c)
         lock = manager.Lock()
+        with open(clustfile) as fin:
         #run the pool over all clusters to get file of structures
-        for cluster in clusters:
-            pool.apply_async(func=fold_clusters, args=(lock, cluster,
-                             clusters[cluster], outfolder))
+            #throw out first line since it has number in it
+            fin.readline()
+            currclust = fin.readline().strip(">").strip()
+            fin.readline()
+            cluster = []
+            for header, seq in MinimalFastaParser(fin):
+                if header.startswith("cluster_"):
+                    pool.apply_async(func=fold_clusters, args=(lock, currclust,
+                             cluster, structfile))
+                    currclust = header
+                    cluster = []
+                else:
+                    cluster.append((header, seq))
+            pool.apply_async(func=fold_clusters, args=(lock, currclust,
+                             cluster, structfile))
         pool.close()
         pool.join()
+        cluster = None
+        del cluster
     else:
         print "Clusters previously folded"
 
-     #read in all structures now that they are folded and aligned
-    structgroups = {}
-    count = 1
-    cfo = open(outfolder + "cluster_structs.fasta", 'rU')
-    #throw out first line (dont need cluster number), then read in currstruct
-    cfo.readline()
-    currstruct = cfo.readline().strip()
-    currseqs = []
-    for header, seq in MinimalFastaParser(cfo):
-        if "cluster_" in header:
-            count += 1
-            if currstruct not in structgroups:
-            #turn list of tuples into alignment object
-                structgroups[currstruct] = LoadSeqs(data=currseqs, moltype=RNA)
-            else:
-                aln = LoadSeqs(data=currseqs, moltype=RNA)
-                structgroups[currstruct] = structgroups[currstruct].addSeqs(aln)
-            #move on to next structgroup
-            currstruct = seq
-            currseqs = []
-        else:
-            currseqs.append((header, seq))
-    structgroups[currstruct] = LoadSeqs(data=currseqs, moltype=RNA)
-    cfo.close()
-    del currseqs
-    for struct in structgroups:
-        if len(struct) != len(structgroups[struct]):
-            print struct
-
-    if count != numclusts:
-        raise AssertionError(" ".join([str(count), "structures,",
-                                       str(len(clusters)),
-                                       "clusters. Not all clusters folded!"]))
-    clusters.clear()
-    del clusters
+    #read in all structures now that they are folded and aligned
+    with open(structfile) as fin:
+        seqstructs = create_seqstructs(fin, numclusts)
 
     print "Runtime: %0.2f min" % ((time() - secs)/60)
     print "==Grouping clusters by sequence & secondary structure=="
     if not exists(outfolder + "fasta_groups/"):
         secs = time()
-        print "start: " + str(len(structgroups)) + " initial groups"
+        print "start: %i initial groups" % len(seqstructs)
         #initial clustering by structures generated in first folding
         #run the pool over all shape groups to get final grouped structgroups
-        hold = group_by_seqstruct(structgroups, clustscore, cpus=args.c,
+        grouped = group_by_seqstruct(seqstructs, clustscore, cpus=args.c,
                                   setpercent=0.01)
-        print "%i end groups (%0.2f hrs)" % (len(hold), (time()-secs)/3600)
+        del seqstructs
+        print "%i end groups (%0.2f hrs)" % (len(grouped), (time()-secs)/3600)
         print "Align end groups"
 
         secs = time()
         #collect all structs together and post-process them.
         #Does final fold and file printout
+        with open(clustfile) as fin:
+            clusters, numclusts = read_clusters(fin)
         mkdir(outfolder + "fasta_groups")
         params = {"-diags": True, "-maxiters": 5}
         pool = Pool(processes=args.c)
         #need to use fasta string because pycogent sequence collections
         #HATE multithreading so can't use them
-        for num, struct in enumerate(hold):
-            count = 0
-            seqs = structgroups[struct].degap().toFasta() + "\n"
-            count += count_seqs(structgroups[struct].Names)
+        for num, ref in enumerate(grouped):
+            seqs = clusters[ref]
             fastafolder = outfolder+"/fasta_groups/"
-            for substruct in hold[struct]:
-                seqs = ''.join([seqs,
-                                structgroups[substruct].degap().toFasta(),
-                                "\n"])
-                count += count_seqs(structgroups[substruct].Names)
+            for cluster in grouped[ref]:
+                seqs.extend(clusters[cluster])
             pool.apply_async(func=align_order_seqs, args=(seqs, params,
                                                           fastafolder, num))
-            #final_fold(seqs, params, outfolder + "fasta_groups/", num)
-        hold.clear()
-        del hold
+        grouped.clear()
+        del grouped
+        clusters.clear()
+        del clusters
         pool.close()
         pool.join()
         print "Align complete (%0.2f min)" % ((time()-secs)/60)
@@ -339,7 +308,7 @@ if __name__ == "__main__":
         elif exists(uniques_file):
             seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
         else:
-            raise IOError("Round's fasta file does not exist!")
+            raise IOError("Round %i fasta file does not exist!" % rnd)
         for fam in fams:
             run_infernal("%s/cmfile.cm" % famfolder, rnd, seqs, famfolder,
                          cpus=args.c, score=args.isc)
