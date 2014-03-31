@@ -207,10 +207,9 @@ def build_reference(keys, refsize):
 
 
 def group_to_reference(reference, nonref, minscore, cpus=1):
-    pool = Pool(processes=cpus, maxtasksperchild=1)
+    pool = Pool(processes=cpus)
     manager = Manager()
-    groupstruct = manager.dict()
-    nogroup = manager.list()
+    hold = []
 
     chunksize = len(nonref)/cpus
     if chunksize == 0:
@@ -219,61 +218,66 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
         #divide up nonref into chunks and align each chunk to reference seqs
         #final # chunks == number of cpus available
         endpos = startpos+chunksize
-        pool.apply_async(func=group, args=(nonref[startpos:endpos],
-                                           minscore, reference, groupstruct,
-                                           nogroup))
+        pool.apply_async(func=group, args=(nonref[startpos:endpos], minscore,
+                                           reference), callback=hold.append)
     pool.close()
     pool.join()
-    #need to explicitly change to list and dict because manager versions are
-    #missing certain key functionality expected of lists and dicts
-    return dict(groupstruct), list(nogroup)
+    #join all results to final dictionary and list to return
+    groups = {r.name: [] for r in reference}
+    nogroup = []
+    for grouped, notgrouped in hold:
+        nogroup.extend(notgrouped)
+        for ref, g in grouped.iteritems():
+            groups[ref].extend(g)
+    return groups, nogroup
 
 
-def group(nonref, minscore, ref=None, groupstruct=None, nogroup=None):
+def group(nonref, minscore, ref=None):
     #takes in list of seqstructure objects for nonref and ref
-    try:
-        basefolder = dirname(abspath(__file__))
-        matrix = basefolder + "/NucMatrix"
-        denovo = True
-        #if ref list is pased, know we are refrence grouping
-        if ref is not None:
-            denovo = False
-        if groupstruct is None:
-            groupstruct = {}
-        if nogroup is None:
-            nogroup = []
-        #loop through all nonreference items
-        for pos, currnonref in enumerate(nonref):
-            seq1 = currnonref.seq.replace("-", "")
-            bestref = ""
-            bestscore = minscore
-            if denovo:
-                ref = nonref[pos+1:]
-            #compare to each reference item
-            for refstruct in ref:
-                seq2 = refstruct.seq.replace("-", "")
-                #get alignment score and add to seq/struct score
-                aln = global_align(seq1, seq2, gap_open=-1, gap_extend=-1,
-                                   matrix=matrix)
-                alnsc = score_alignment(aln[0], aln[1], gap_open=-1,
-                                        gap_extend=-1, matrix=matrix)
-                #score is normalized by dividing each score by sequence length
-                #then adding. This should keep scores between zero and one
-                score = ((float(alnsc) / len(aln[0])) +
-                         currnonref.score_seq(seq2))/3
-                if score >= bestscore:
-                    bestscore = score
-                    bestref = refstruct.name
-            if bestref != "":
-                if bestref not in groupstruct:
-                    groupstruct[bestref] = [currnonref.name]
-                else:
-                    groupstruct[bestref].append(currnonref.name)
+    basefolder = dirname(abspath(__file__))
+    matrix = basefolder + "/NucMatrix"
+    #if ref list is pased, know we are reference grouping
+    denovo = False if ref else True
+    nogroup = []
+    grouped = {}
+   
+    #loop through all nonreference items
+    for pos, currnonref in enumerate(nonref):
+        seq1 = currnonref.seq.replace("-", "")
+        bestref = None
+        bestscore = minscore
+        if denovo:
+            ref = nonref[pos+1:]
+        #compare to each reference item
+        for refstruct in ref:
+            seq2 = refstruct.seq.replace("-", "")
+            #get alignment score and add to seq/struct score
+            aln = global_align(seq1, seq2, gap_open=-1, gap_extend=-1,
+                               matrix=matrix)
+            alnsc = score_alignment(aln[0], aln[1], gap_open=-1,
+                                    gap_extend=-1, matrix=matrix)
+            #score is normalized by dividing each score by sequence length
+            #then adding. This should keep scores between zero and one
+            score = ((float(alnsc) / len(aln[0])) +
+                     currnonref.score_seq(refstruct.seq))/3
+            if score > bestscore:
+                bestscore = score
+                bestref = refstruct.name
+
+        if bestref:
+            if bestref not in grouped:
+                grouped[bestref] = [currnonref.name]
             else:
-                nogroup.append(currnonref)
-    except Exception, e:
-        print "GROUP: ", format_exc(e)
-    return groupstruct, nogroup
+                grouped[bestref].append(currnonref.name)
+        else:
+            nogroup.append(currnonref)
+
+    #make sure all ref in the final grouping dictionary if applicable
+    if ref is not None:
+        for r in ref:
+            if r.name not in grouped:
+                grouped[r.name] = []
+    return (grouped, nogroup)
 
 
 def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
@@ -291,30 +295,19 @@ def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
         #return the list directly if only one item (useful for breakout work)
         if len(grouping) == 1:
             return {grouping.name: []}
-        #create SeqStructures objects for items we are clustering
-        #just de-novo group if 20 or less to save time and effort
-        if len(grouping) <= 20:
-            grouped, ungrouped = group(grouping, structscore)
-            for ug in ungrouped:
-                grouped[ug.name] = []
-            return grouped
         #for speed, get 1% as initial clustering or user defined.
         #Need at least 5 structs though.
-        finishlen = int(ceil(len(grouping) * setpercent))
-        if finishlen < 5:
-            finishlen = 5
-        startgrouped = 0
-        endgrouped = 1
+        finishlen = int(len(grouping) * setpercent)
+        if finishlen == 0:
+            finishlen = 1
         grouped = {}
         ungrouped = grouping
         # keep refining while not at limit and are still grouping structs
-        while (len(grouping) - len(grouped) > finishlen and
-               startgrouped != endgrouped):
-            startgrouped = len(grouped)
+        while len(ungrouped) > finishlen:
             ref, nonref = build_reference(ungrouped, finishlen)
             g, ungrouped = group_to_reference(ref, nonref, structscore, cpus)
             grouped.update(g)
-            endgrouped = len(grouped)
+            print len(ungrouped), ">", finishlen
         #do the last grouping
         g, ungrouped = group(ungrouped, structscore)
         grouped.update(g)

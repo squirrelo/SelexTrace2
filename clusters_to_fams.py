@@ -165,6 +165,7 @@ if __name__ == "__main__":
         grouped = group_by_seqstruct(seqstructs, clustscore, cpus=args.c,
                                   setpercent=0.01)
         del seqstructs
+
         print "%i end groups (%0.2f hrs)" % (len(grouped), (time()-secs)/3600)
         print "Align end groups"
 
