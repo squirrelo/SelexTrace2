@@ -272,7 +272,7 @@ def group(nonref, minscore, ref=None):
                 grouped[r.name] = []
     return (grouped, nogroup)
 
-@profile
+
 def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
         '''Does grouping by way of de-novo reference creation and clustering
             grouping - list of SeqStructure objects to be grouped
@@ -300,7 +300,6 @@ def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
             ref, nonref = build_reference(ungrouped, finishlen)
             g, ungrouped = group_to_reference(ref, nonref, structscore, cpus)
             grouped.update(g)
-            print len(ungrouped), ">", finishlen
         #do the last grouping
         g, ungrouped = group(ungrouped, structscore)
         grouped.update(g)
