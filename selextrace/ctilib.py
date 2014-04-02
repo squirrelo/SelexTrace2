@@ -88,16 +88,20 @@ def create_seqstructs(cfo, numclusts):
                                    currclust))
     if len(seqstructs) != numclusts:
         raise AssertionError("%i structures, %i clusters. Not all clusters "
-                             "folded!" % (len(seqstructs), numclustss))
+                             "folded!" % (len(seqstructs), numclusts))
     return seqstructs
 
 class SeqStructure(object):
+    __slots__ = ("pairs", "struct", "seq", "name", "_seqmap")
+
     def __init__(self, structure, seq, name):
+        if len(seq) != len(structure):
+            raise ValueError("sequence must be same length as structure!")
+
         self.struct = structure
         self.seq = seq
         self.name = name
-        self._structmap = self._create_structmap(structure)
-        self._seqmap = self._create_seqmap(seq)
+        self._seqmap = self._create_seqmap()
 
         self.pairs = ('AU', 'UA', 'GC', 'CG', 'GU', 'UG')
 
@@ -105,32 +109,21 @@ class SeqStructure(object):
         return len(self.struct)
 
     def __str__(self):
-        if self._seqmap is not None:
-            strmap = "seqmap:" + ' '.join([str(pos) for pos in self._seqmap])
-        else:
-            strmap = "structmap: " + ' '.join([str(pos)
-                                               for pos in self._structmap])
+        strmap = "seqmap:" + ' '.join([str(pos) for pos in self._seqmap])
         return ''.join([self.struct, "\n", strmap])
 
-    def _create_structmap(self, structure):
+
+    def _create_seqmap(self):
+        seqmap = []
         stack = []
-        structmap = []
-        for pos, symbol in enumerate(structure):
+        for pos, symbol in enumerate(self.struct):
             if symbol == "(":
                 stack.append(pos)
             elif symbol == ")":
                 p1 = stack.pop()
-                structmap.append((p1, pos))
-        return structmap
-
-    def _create_seqmap(self, seq):
-        if len(seq) != len(self.struct):
-            raise ValueError("sequence must be same length as structure!")
-        seqmap = []
-        for p1, p2 in self._structmap:
-            pair = seq[p1] + seq[p2]
-            seqmap.append((p1, p2, pair))
-        return seqmap
+                pair = ''.join((self.seq[p1], self.seq[pos]))
+                seqmap.append((p1, pos, pair))
+        return tuple(seqmap)
 
     def score_seq(self, seq):
         """Scores sequence based on how well it fits into given seq/struct map.
@@ -211,7 +204,7 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
     manager = Manager()
     hold = []
 
-    chunksize = len(nonref)/cpus
+    chunksize = int(ceil(len(nonref)/float(cpus)))
     if chunksize == 0:
         chunksize = 1
     for startpos in range(0, len(nonref), chunksize):
@@ -279,7 +272,7 @@ def group(nonref, minscore, ref=None):
                 grouped[r.name] = []
     return (grouped, nogroup)
 
-
+@profile
 def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
         '''Does grouping by way of de-novo reference creation and clustering
             grouping - list of SeqStructure objects to be grouped
