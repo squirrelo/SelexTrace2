@@ -1,10 +1,9 @@
-from sys import stdout
-from os.path import exists, dirname, abspath
+from os.path import exists
 from os import mkdir, walk
 from subprocess import Popen, PIPE
 from math import ceil
 from random import shuffle
-from multiprocessing import Pool, Manager
+from multiprocessing import Pool
 from traceback import format_exc
 
 from cogent import LoadSeqs, RNA
@@ -34,6 +33,7 @@ def fold_clusters(lock, cluster, seqs, otufile):
     except Exception:
         lock.release()
 
+
 def write_clusters(clusters, cout):
     """ writes out cluster fasta file
     INPUT
@@ -50,6 +50,7 @@ def write_clusters(clusters, cout):
         cout.write(">%s\n%s\n" % (cluster, cluster))
         for header, seq in clusters[cluster]:
             cout.write(">%s\n%s\n" % (header, seq))
+
 
 def read_clusters(cfo):
     numclusts = int(cfo.readline().strip())
@@ -91,6 +92,7 @@ def create_seqstructs(cfo, numclusts):
                              "folded!" % (len(seqstructs), numclusts))
     return seqstructs
 
+
 class SeqStructure(object):
     __slots__ = ("pairs", "struct", "seq", "name", "_seqmap")
 
@@ -108,10 +110,23 @@ class SeqStructure(object):
     def __len__(self):
         return len(self.struct)
 
-    def __str__(self):
-        strmap = "seqmap:" + ' '.join([str(pos) for pos in self._seqmap])
-        return ''.join([self.struct, "\n", strmap])
+    def __eq__(self, other):
+        if self.struct != other.struct:
+            return False
+        if self.seq != other.seq:
+            return False
+        if self.name != other.name:
+            return False
+        return True
 
+    def __ne__(self, other):
+        if self.struct == other.struct:
+            return False
+        if self.seq == other.seq:
+            return False
+        if self.name == other.name:
+            return False
+        return True
 
     def _create_seqmap(self):
         seqmap = []
@@ -201,7 +216,6 @@ def build_reference(keys, refsize):
 
 def group_to_reference(reference, nonref, minscore, cpus=1):
     pool = Pool(processes=cpus)
-    manager = Manager()
     hold = []
 
     chunksize = int(ceil(len(nonref)/float(cpus)))
@@ -227,15 +241,15 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
 
 def group(nonref, minscore, ref=None):
     #takes in list of seqstructure objects for nonref and ref
-    basefolder = dirname(abspath(__file__))
-    matrix = basefolder + "/NucMatrix"
     #if ref list is pased, know we are reference grouping
     denovo = False if ref else True
     nogroup = []
     grouped = {}
-   
+
     #loop through all nonreference items
     for pos, currnonref in enumerate(nonref):
+        if currnonref.name in grouped:
+            continue
         seq1 = currnonref.seq.replace("-", "")
         bestref = None
         bestscore = minscore
@@ -259,7 +273,7 @@ def group(nonref, minscore, ref=None):
                 grouped[bestref] = [currnonref.name]
             else:
                 grouped[bestref].append(currnonref.name)
-        else:
+        elif currnonref.name not in grouped:
             nogroup.append(currnonref)
 
     #make sure all ref in the final grouping dictionary if applicable
