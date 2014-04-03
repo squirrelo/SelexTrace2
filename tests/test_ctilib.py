@@ -155,5 +155,14 @@ class MainTests(TestCase):
         self.assertEqual(obs_group, exp_group)
         self.assertEqual(obs_nogroup, exp_nogroup)
 
+    def test_group_to_reference(self):
+        obs_group, obs_nogroup = group_to_reference(self.seqstruct[3:],
+                                                    self.seqstruct[:3],
+                                                    0.75, cpus=2)
+        exp_group = {'cluster_343': ['cluster_345', 'cluster_337'],
+                     'cluster_338': [],
+                     'cluster_340': ['cluster_344', 'cluster_339']}
+        exp_nogroup = [self.seqstruct[6], self.seqstruct[8], self.seqstruct[9]]
+
 if __name__ == "__main__":
     main()
