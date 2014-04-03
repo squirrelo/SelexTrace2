@@ -207,6 +207,8 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
     chunksize = int(ceil(len(nonref)/float(cpus)))
     if chunksize == 0:
         chunksize = 1
+    elif chunksize > 500:
+        chunksize = 500
     for startpos in range(0, len(nonref), chunksize):
         #divide up nonref into chunks and align each chunk to reference seqs
         #final # chunks == number of cpus available
