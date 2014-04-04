@@ -475,6 +475,7 @@ def run_infernal(cmfile, rnd, seqs, outfolder, cpus=1, score=0.0,
         with open("%s/log.txt" % outfolder, 'a') as fout:
             fout.write("Round %i: %i hits\n" % (rnd, len(result)))
 
+
 def calculate_overlap(basefolder, rnd):
     basefolder = basefolder.strip()
     if basefolder[:-1] != "/":
@@ -502,7 +503,7 @@ def calculate_overlap(basefolder, rnd):
         #go through all other groups and compare sequence headers
         for secgroup in range(group+1, sizegroups):
             secgroupfile = "%s%s/R%ihits.fna" % (basefolder, groups[secgroup],
-                                                rnd)
+                                                 rnd)
             if not exists(secgroupfile):
                 raise IOError("File not found: %s" % secgroupfile)
             count = 0
@@ -536,7 +537,6 @@ def create_families(basefolder, rnd, outfile=None, fam_cutoff=0.9):
             families.append(set([groups[rowpos]]))
         for colpos, percent in enumerate(row):
             if percent > fam_cutoff:
-                famgroup = groups[colpos]
                 families[currpos].add(groups[colpos])
     #turn sets to lists for returning
     for pos in range(0, len(families)):
@@ -545,6 +545,3 @@ def create_families(basefolder, rnd, outfile=None, fam_cutoff=0.9):
         savetxt(basefolder+outfile, overlap, delimiter="\t",
                 header="\t".join(groups))
     return families
-
-
-
