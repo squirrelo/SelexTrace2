@@ -161,15 +161,15 @@ class MainTests(TestCase):
                                                     0.75, cpus=3)
         exp_group = {'cluster_343': ['cluster_345', 'cluster_337'],
                      'cluster_338': [],
-                     'cluster_340': ['cluster_344', 'cluster_339']}
+                     'cluster_340': ['cluster_339', 'cluster_344']}
         exp_nogroup = [self.seqstruct[6], self.seqstruct[8], self.seqstruct[9]]
-
-        self.assertEqual(obs_group, exp_group)
         #due to nature of multiprocess, list can be in any order
         #need to sorth then check to make sure correct
+        for key in obs_group:
+            obs_group[key] = obs_group[key].sort()
         obs_nogroup.sort(key=lambda x: x.name)
         self.assertEqual(obs_nogroup, exp_nogroup)
-        
+        self.assertEqual(obs_group, exp_group)
 
 if __name__ == "__main__":
     main()
