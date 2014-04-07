@@ -1,4 +1,4 @@
-from os.path import exists
+from os.path import exists, dirname, abspath
 from os import mkdir, walk
 from subprocess import Popen, PIPE
 from math import ceil
@@ -11,8 +11,8 @@ from cogent.app.infernal_v11 import (cmsearch_from_file, calibrate_file)
 from cogent.format.stockholm import stockholm_from_alignment
 from cogent.parse.fasta import MinimalFastaParser
 from cogent.app.muscle_v38 import align_unaligned_seqs
-from cogent.align.algorithm import nw_align
-from numpy import empty, savetxt
+from numpy import empty, savetxt, ones, identity, int16
+import align
 
 from bayeswrapper import bayesfold
 from selextrace.stutils import count_seqs
@@ -259,10 +259,10 @@ def group(nonref, minscore, ref=None):
         for refstruct in ref:
             seq2 = refstruct.seq.replace("-", "")
             #get alignment score and add to seq/struct score
-            aln, alnsc = nw_align(seq1, seq2, return_score=True)
+            #aln, alnsc = nw_align(seq1, seq2, return_score=True)
             #score is normalized by dividing each score by sequence length
             #then adding. This should keep scores between zero and one
-            score = ((float(alnsc) / len(aln[0])) +
+            score = (nwalign_wrapper(seq1, seq2) +
                      currnonref.score_seq(refstruct.seq))/3
             if score > bestscore:
                 bestscore = score
@@ -282,6 +282,16 @@ def group(nonref, minscore, ref=None):
             if r.name not in grouped:
                 grouped[r.name] = []
     return (grouped, nogroup)
+
+NUCMATRIX = -ones((256, 256)) + 2 * identity(256)
+NUCMATRIX = NUCMATRIX.astype(int16)
+
+
+def nwalign_wrapper(seq1, seq2, matrix=NUCMATRIX):
+    s1 = align.string_to_alignment(seq1)
+    s2 = align.string_to_alignment(seq2)
+    (score, a1, a2) = align.align(s1, s2, -1, -1, matrix)
+    return float(score) / len(a1)
 
 
 def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
