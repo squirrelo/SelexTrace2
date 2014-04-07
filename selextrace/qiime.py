@@ -101,6 +101,7 @@ def MatchScorerAmbigs(match, mismatch, matches=None):
 
 equality_scorer_ambigs = MatchScorerAmbigs(1, -1)
 
+
 def local_align_primer_seq(primer, sequence, sw_scorer=equality_scorer_ambigs):
     """Perform local alignment of primer and sequence
 

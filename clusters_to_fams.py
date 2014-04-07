@@ -18,13 +18,12 @@ from multiprocessing import Pool, Manager
 
 from cogent.parse.fasta import MinimalFastaParser
 from cogent import LoadSeqs, RNA
-from numpy import empty
 
-from selextrace.stutils import cluster_seqs, count_seqs
+from selextrace.stutils import cluster_seqs
 from selextrace.ctilib import (fold_clusters, create_final_output,
-                               group_by_seqstruct, align_order_seqs, 
+                               group_by_seqstruct, align_order_seqs,
                                run_infernal, create_families,
-                               write_clusters, read_clusters, 
+                               write_clusters, read_clusters,
                                create_seqstructs)
 
 if __name__ == "__main__":
@@ -103,7 +102,7 @@ if __name__ == "__main__":
         #already clustered but not folded, so read in clusters
         with open(clustfile) as fin:
             clusters, numclusts = read_clusters(fin)
-        
+
         print "Sequences previously clustered, %i clusters" % numclusts
     else:
         print "Running uclust over sequences"
@@ -137,7 +136,7 @@ if __name__ == "__main__":
             for header, seq in MinimalFastaParser(fin):
                 if header.startswith("cluster_"):
                     pool.apply_async(func=fold_clusters, args=(lock, currclust,
-                             cluster, structfile))
+                                     cluster, structfile))
                     currclust = header
                     cluster = []
                 else:
@@ -163,7 +162,7 @@ if __name__ == "__main__":
         #initial clustering by structures generated in first folding
         #run the pool over all shape groups to get final grouped structgroups
         grouped = group_by_seqstruct(seqstructs, clustscore, cpus=args.c,
-                                  setpercent=0.01)
+                                     setpercent=0.01)
         del seqstructs
 
         print "%i end groups (%0.2f hrs)" % (len(grouped), (time()-secs)/3600)
@@ -288,7 +287,7 @@ if __name__ == "__main__":
                 raise IOError("FASTA NOT FOUND: %s" % groupseqsfile)
             famseqs += LoadSeqs(groupseqsfile, moltype=RNA).degap().toFasta()\
                        + "\n"
-        #fold family sequences 
+        #fold family sequences
         params = {"-diags": True, "-maxiters": 5}
         align_order_seqs(famseqs, params, fambase, famnum, prefix="fam_")
         create_final_output("%sfam_%i.fna" % (fambase, famnum), outfolder,
@@ -310,7 +309,7 @@ if __name__ == "__main__":
             seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
         else:
             raise IOError("Round %i fasta file does not exist!" % rnd)
-        for fam in fams:
+        for famfolder in fams:
             run_infernal("%s/cmfile.cm" % famfolder, rnd, seqs, famfolder,
                          cpus=args.c, score=args.isc)
 

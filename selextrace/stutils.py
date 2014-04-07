@@ -85,7 +85,7 @@ def cluster_seqs(seqspath, simm, folderout='/tmp', gapopen=None, gapext=None):
         '--log': folderout + "clusters.log"
     }
     result = uclust(input_data)
-    clusters, failures, new_seeds = clusters_from_uc_file(result['ClusterFile'])
+    clusters, failures, newseeds = clusters_from_uc_file(result['ClusterFile'])
 
     seqs = LoadSeqs(seqspath, aligned=False)
     convheader = {}
@@ -98,9 +98,10 @@ def cluster_seqs(seqspath, simm, folderout='/tmp', gapopen=None, gapext=None):
         clusterseqs["cluster_" + str(num)] = []
         for header in clusters[cluster]:
             clusterseqs["cluster_" + str(num)].append((convheader[header],
-                                        seqs.getSeq(convheader[header])))
+                                              seqs.getSeq(convheader[header])))
 
     return clusterseqs
+
 
 def count_seqs(headers, field="count", divider=":"):
     """Returns the total sequence count of deduplicated sequences"""
@@ -114,6 +115,7 @@ def count_seqs(headers, field="count", divider=":"):
             raise RuntimeError("%s not found in header %s" % (field, header))
         count += int(hold.split(divider)[1])
     return count
+
 
 def remove_duplicates(seqsin):
     '''Takes in LoadSeqs loadable sequences, removes duplicate sequences
