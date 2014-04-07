@@ -283,6 +283,7 @@ def group(nonref, minscore, ref=None):
                 grouped[r.name] = []
     return (grouped, nogroup)
 
+
 NUCMATRIX = -ones((256, 256)) + 2 * identity(256)
 NUCMATRIX = NUCMATRIX.astype(int16)
 
