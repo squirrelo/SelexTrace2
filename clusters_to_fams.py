@@ -19,7 +19,7 @@ from multiprocessing import Pool, Manager
 from cogent.parse.fasta import MinimalFastaParser
 from cogent import LoadSeqs, RNA
 
-from selextrace.stutils import cluster_seqs
+from selextrace.stutils import cluster_seqs, count_seqs
 from selextrace.ctilib import (fold_clusters, create_final_output,
                                group_by_seqstruct, align_order_seqs,
                                run_infernal, create_families,
@@ -40,10 +40,11 @@ if __name__ == "__main__":
         help="Base folder containing SELEX round fasta files")
     parser.add_argument('--sim', type=float, default=0.99,
         help="Simmilarity for uclust. (Default 0.99)")
-    parser.add_argument('--minseqs', type=int, default=100,
-        help="Min number of seqs for group to be significant (Default 100)")
-    parser.add_argument('--csc', type=float, default=0.75,
-        help="Score cutoff for clustering (Default 0.75)")
+    parser.add_argument('--minseqs', type=int, default=-1,
+        help=("Min number of seqs for group to be significant "
+              "(Default 0.1% total)"))
+    parser.add_argument('--csc', type=float, default=0.8,
+        help="Score cutoff for clustering (Default 0.8)")
     parser.add_argument('--isc', type=int, default=80,
         help="Score cutoff for Infernal. (Default 80)")
     parser.add_argument('--fsc', type=int, default=150,
@@ -64,6 +65,12 @@ if __name__ == "__main__":
 
     if not exists(basefolder):
         raise IOError("Basefolder does not exist!")
+
+    #calculate minseqs if necessary
+    if args.minseqs == -1:
+        with open(args.i) as fin:
+            args.minseqs = int(count_seqs([h for h, s in
+                                           MinimalFastaParser(fin)]) * 0.0001)
 
     if basefolder[:-1] != "/":
         basefolder += "/"
@@ -295,23 +302,23 @@ if __name__ == "__main__":
 
     print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
 
-    print "===Running Infernal for families==="
-    print "infernal score cutoff: ", args.isc
-    secs = time()
-    fams = [folder for folder in walk(outfolder).next()[1] if "fam_" in folder]
-    for rnd in range(1, args.r+1):
-        uniques_remain_file = "%sR%i/R%i-Unique-Remaining.fasta" % (basefolder,
-                                                                    rnd, rnd)
-        uniques_file = "%sR%i/R%i-Unique.fasta" % (basefolder, rnd, rnd)
-        if exists(uniques_remain_file):
-            seqs = LoadSeqs(uniques_remain_file, moltype=RNA, aligned=False)
-        elif exists(uniques_file):
-            seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
-        else:
-            raise IOError("Round %i fasta file does not exist!" % rnd)
-        for famfolder in fams:
-            run_infernal("%s/cmfile.cm" % famfolder, rnd, seqs, famfolder,
-                         cpus=args.c, score=args.isc)
+    # print "===Running Infernal for families==="
+    # print "infernal score cutoff: ", args.isc
+    # secs = time()
+    # fams = [folder for folder in walk(outfolder).next()[1] if "fam_" in folder]
+    # for rnd in range(1, args.r+1):
+    #     uniques_remain_file = "%sR%i/R%i-Unique-Remaining.fasta" % (basefolder,
+    #                                                                 rnd, rnd)
+    #     uniques_file = "%sR%i/R%i-Unique.fasta" % (basefolder, rnd, rnd)
+    #     if exists(uniques_remain_file):
+    #         seqs = LoadSeqs(uniques_remain_file, moltype=RNA, aligned=False)
+    #     elif exists(uniques_file):
+    #         seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
+    #     else:
+    #         raise IOError("Round %i fasta file does not exist!" % rnd)
+    #     for famfolder in fams:
+    #         run_infernal("%s/cmfile.cm" % famfolder, rnd, seqs, famfolder,
+    #                      cpus=args.c, score=args.isc)
 
     print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
     endtime = (time() - starttime)/3600

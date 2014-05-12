@@ -5,6 +5,7 @@ from math import ceil
 from random import shuffle
 from multiprocessing import Pool
 from traceback import format_exc
+from collections import defaultdict
 
 from cogent import LoadSeqs, RNA
 from cogent.app.infernal_v11 import (cmsearch_from_file, calibrate_file)
@@ -22,7 +23,7 @@ def fold_clusters(lock, cluster, seqs, otufile):
     '''Function for multithreading.
     Computes structure for a cluster and writes it to file'''
     aln, struct = bayesfold(seqs, params={"-diags": True})
-    #write structure out to file
+    # write structure out to file
     try:
         lock.acquire()
         cfo = open(otufile, 'a')
@@ -55,11 +56,10 @@ def write_clusters(clusters, cout):
 def read_clusters(cfo):
     numclusts = int(cfo.readline().strip())
     currclust = ""
-    clusters = {}
+    clusters = defaultdict(list)
     for header, seq in MinimalFastaParser(cfo):
-        if "cluster_" in header:
+        if "cluster" in header:
             currclust = header
-            clusters[currclust] = []
         else:
             clusters[currclust].append((header, seq))
 
@@ -68,7 +68,7 @@ def read_clusters(cfo):
 
 def create_seqstructs(cfo, numclusts):
     seqstructs = []
-    #read in first cluster and struct
+    # read in first cluster and struct
     currclust = cfo.readline().strip(">").strip()
     struct = cfo.readline().strip()
     seqs = []
@@ -78,7 +78,7 @@ def create_seqstructs(cfo, numclusts):
             seqstructs.append(SeqStructure(struct,
                                            ''.join(aln.majorityConsensus()),
                                            currclust))
-            #move on to next structgroup
+            # move on to next structgroup
             struct = seq
             seqs = []
             currclust = header
@@ -156,12 +156,12 @@ class SeqStructure(object):
         if self._seqmap is None:
             raise RuntimeError("No seqmap exists!")
         if len(seq) == len(self.struct):
-        #same length so trivial
+        # same length so trivial
             maxscore = self._eval_struct_seq(seq)
         elif len(seq) > len(self.struct):
-            #sequence longer than struct so keep slicing sequence
-            #evaluate all possible sequence fittings into the structure
-            #return highest scoring one
+            # sequence longer than struct so keep slicing sequence
+            # evaluate all possible sequence fittings into the structure
+            # return highest scoring one
             while end != len(seq):
                 score = self._eval_struct_seq(seq[start:end])
                 if maxscore < score:
@@ -169,16 +169,16 @@ class SeqStructure(object):
                 start += 1
                 end += 1
         else:
-            #struct longer than sequence so walk seq down struct and compare
-            #evaluate all possible sequence fittings into the structure
-            #return highest scoring one
+            # struct longer than sequence so walk seq down struct and compare
+            # evaluate all possible sequence fittings into the structure
+            # return highest scoring one
             while end != len(self.struct):
                 score = self._eval_struct_seq(seq, seqoffset=start)
                 if maxscore < score:
                     maxscore = score
                 start += 1
                 end += 1
-        #return normalized score
+        # return normalized score
         return float(maxscore) / len(self._seqmap)
 
     def _eval_struct_seq(self, seq, seqoffset=0):
@@ -204,13 +204,36 @@ class SeqStructure(object):
                     score += 1
         return score
 
+# object wrapper so create Popen object once: saves DAYS of overhead
+class ScoreStructures(object):
+    def __init__(self):
+        self.p = Popen(["RNAdistance"], stdin=PIPE, stdout=PIPE)
+
+    def __call__(self, struct1, struct2):
+        strlen = len(struct1)
+        if len(struct2) > strlen:
+            strlen = len(struct2)
+        self.p.stdin.write(''.join([struct1, "\n", struct2, "\n"]))
+        self.p.stdin.flush()
+        # lower number better for rnadistance program, so need to reverse for
+        # our scoring algorithm
+        score = strlen - float(self.p.stdout.readline().strip().split(":")[1])
+        return score / strlen
+    def end(self):
+        self.p.stdin.write('@\n')
+        self.p.stdin.flush()
+        # force kill to make sure it closes
+        try:
+            self.p.kill()
+        except:
+            pass
 
 def build_reference(keys, refsize):
     '''Creates a random list of references refsize long, returning rest as
        nonref
     '''
     shuffle(keys)
-    #return reference, nonreference by slicing list
+    # return reference, nonreference by slicing list
     return keys[:refsize], keys[refsize:]
 
 
@@ -222,14 +245,14 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
     if chunksize == 0:
         chunksize = 1
     for startpos in range(0, len(nonref), chunksize):
-        #divide up nonref into chunks and align each chunk to reference seqs
-        #final # chunks == number of cpus available
+        # divide up nonref into chunks and align each chunk to reference seqs
+        # final # chunks == number of cpus available
         endpos = startpos+chunksize
         pool.apply_async(func=group, args=(nonref[startpos:endpos], minscore,
                                            reference), callback=hold.append)
     pool.close()
     pool.join()
-    #join all results to final dictionary and list to return
+    # join all results to final dictionary and list to return
     groups = {r.name: [] for r in reference}
     nogroup = []
     for grouped, notgrouped in hold:
@@ -240,13 +263,14 @@ def group_to_reference(reference, nonref, minscore, cpus=1):
 
 
 def group(nonref, minscore, ref=None):
-    #takes in list of seqstructure objects for nonref and ref
-    #if ref list is pased, know we are reference grouping
+    # takes in list of seqstructure objects for nonref and ref
+    # if ref list is pased, know we are reference grouping
+    scorestruct = ScoreStructures()
     denovo = False if ref else True
     nogroup = []
-    grouped = {}
+    grouped = defaultdict(list)
 
-    #loop through all nonreference items
+    # loop through all nonreference items
     for pos, currnonref in enumerate(nonref):
         if currnonref.name in grouped:
             continue
@@ -255,28 +279,25 @@ def group(nonref, minscore, ref=None):
         bestscore = minscore
         if denovo:
             ref = nonref[pos+1:]
-        #compare to each reference item
+        # compare to each reference item
         for refstruct in ref:
             seq2 = refstruct.seq.replace("-", "")
-            #get alignment score and add to seq/struct score
-            #aln, alnsc = nw_align(seq1, seq2, return_score=True)
-            #score is normalized by dividing each score by sequence length
-            #then adding. This should keep scores between zero and one
+            # get alignment score and add to seq/struct score
+            # score is normalized by dividing each score by sequence length
+            # then adding. This should keep scores between zero and one
             score = (nwalign_wrapper(seq1, seq2) +
-                     currnonref.score_seq(refstruct.seq))/3
+                     scorestruct(currnonref.struct, refstruct.struct)) / 2
             if score > bestscore:
                 bestscore = score
                 bestref = refstruct.name
 
         if bestref:
-            if bestref not in grouped:
-                grouped[bestref] = [currnonref.name]
-            else:
-                grouped[bestref].append(currnonref.name)
+            grouped[bestref].append(currnonref.name)
         elif currnonref.name not in grouped:
             nogroup.append(currnonref)
+    scorestruct.end()
 
-    #make sure all ref in the final grouping dictionary if applicable
+    # make sure all ref in the final grouping dictionary if applicable
     if ref is not None:
         for r in ref:
             if r.name not in grouped:
@@ -334,10 +355,13 @@ def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
 def align_order_seqs(seqs, params, outfolder, num, prefix="group_"):
     if exists("%s%s%i.fna" % (outfolder, prefix, num)):
         return
-    aln = align_unaligned_seqs(seqs, RNA, params=params)
-    aln.Names.sort(reverse=True, key=lambda c: count_seqs(c))
-    with open("%s%s%i.fna" % (outfolder, prefix, num), 'w') as fout:
-        fout.write(aln.toFasta() + "\n")
+    try:
+        aln = align_unaligned_seqs(seqs, RNA, params=params)
+        aln.Names.sort(reverse=True, key=lambda c: count_seqs(c))
+        with open("%s%s%i.fna" % (outfolder, prefix, num), 'w') as fout:
+            fout.write(aln.toFasta() + "\n")
+    except Exception, e:
+        print "align_order_seqs ERROR: ", format_exc(e)
 
 
 def create_final_output(groupfasta, basefolder, minseqs=1, cpus=1):
