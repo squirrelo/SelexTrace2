@@ -156,7 +156,7 @@ class SeqStructure(object):
         if self._seqmap is None:
             raise RuntimeError("No seqmap exists!")
         if len(seq) == len(self.struct):
-        # same length so trivial
+            # same length so trivial
             maxscore = self._eval_struct_seq(seq)
         elif len(seq) > len(self.struct):
             # sequence longer than struct so keep slicing sequence
@@ -187,22 +187,23 @@ class SeqStructure(object):
         score = 0
         for p1, p2, pair in self._seqmap:
             p2 = p2 - seqoffset
-            #make sure we are in range of sequence given including offset
+            # make sure we are in range of sequence given including offset
             if p1 < seqoffset or p2 >= len(seq):
                 continue
             p1 = p1 - seqoffset
-            #p1 & p2: positions of bases, pair: basepair at that position
+            # p1 & p2: positions of bases, pair: basepair at that position
             currpair = seq[p1] + seq[p2]
             currpair = currpair.upper()
             pair = pair.upper()
             if currpair in self.pairs:
                 if currpair == pair:
-                    #perfect pair match with bases scores 2 points
+                    # perfect pair match with bases scores 2 points
                     score += 2
                 else:
-                    #ability to basepair at all scores 1 point
+                    # ability to basepair at all scores 1 point
                     score += 1
         return score
+
 
 # object wrapper so create Popen object once: saves DAYS of overhead
 class ScoreStructures(object):
@@ -217,8 +218,9 @@ class ScoreStructures(object):
         self.p.stdin.flush()
         # lower number better for rnadistance program, so need to reverse for
         # our scoring algorithm
-        score = strlen - float(self.p.stdout.readline().strip().split(":")[1])
-        return score / strlen
+        score = float(self.p.stdout.readline().strip().split(":")[1])
+        return 1 - (score / strlen)
+
     def end(self):
         self.p.stdin.write('@\n')
         self.p.stdin.flush()
@@ -325,14 +327,14 @@ def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
             setpercent - Allows manual percentage setting for ref structures
                            (default 1%  of dict)
         '''
-        #fail if nothing to compare
+        # fail if nothing to compare
         if len(grouping) < 1:
             raise ValueError("Must have at least one item to group!")
-        #return the list directly if only one item (useful for breakout work)
+        # return the list directly if only one item (useful for breakout work)
         if len(grouping) == 1:
             return {grouping.name: []}
-        #for speed, get 1% as initial clustering or user defined.
-        #Need at least 5 structs though.
+        # for speed, get 1% as initial clustering or user defined.
+        # Need at least 5 structs though.
         finishlen = int(len(grouping) * setpercent)
         if finishlen == 0:
             finishlen = 1
@@ -343,10 +345,10 @@ def group_by_seqstruct(grouping, structscore, setpercent=0.01, cpus=1):
             ref, nonref = build_reference(ungrouped, finishlen)
             g, ungrouped = group_to_reference(ref, nonref, structscore, cpus)
             grouped.update(g)
-        #do the last grouping
+        # do the last grouping
         g, ungrouped = group(ungrouped, structscore)
         grouped.update(g)
-        #add ungroupable bit to end
+        # add ungroupable bit to end
         for ug in ungrouped:
             grouped[ug.name] = []
         return grouped
@@ -367,18 +369,18 @@ def align_order_seqs(seqs, params, outfolder, num, prefix="group_"):
 def create_final_output(groupfasta, basefolder, minseqs=1, cpus=1):
     '''Function for multithreading. Creates the final BayesFold alignment and
     writes to files, then r2r struct and infernal CM file'''
-    #skip if already run and program just crashed or whatever
+    # skip if already run and program just crashed or whatever
     currgroup = groupfasta.split("/")[-1].split(".")[0]
     currotufolder = basefolder + currgroup
     if exists(currotufolder):
         return
 
-    #load seqs and make sure we have enough
+    # load seqs and make sure we have enough
     aln = LoadSeqs(groupfasta, moltype=RNA, aligned=True)
     count = count_seqs(aln.Names)
     if count < minseqs:
         return
-    #get weights for each sequence. weight==count
+    # get weights for each sequence. weight==count
     weights = []
     maxweight = 0
     for header in aln.Names:
@@ -388,34 +390,34 @@ def create_final_output(groupfasta, basefolder, minseqs=1, cpus=1):
         weights.append(header.split()[0])
         weights.append(str(weight))
 
-    #fold alignment with bayesfold
+    # fold alignment with bayesfold
     aln, struct = bayesfold(aln, align=False)
 
-    #write log information
+    # write log information
     mkdir(currotufolder)
     with open(currotufolder + "/log.txt", 'w') as logout:
         logout.write(' '.join([currgroup, ":\n", str(count),
                      "sequences\n", str(aln.getNumSeqs()),
                      "unique sequences\nStructure: ", struct, "\n"]))
-    #write out alignment and structure in fasta format
+    # write out alignment and structure in fasta format
     with open(currotufolder + "/bayesfold-aln.fasta", 'w') as alnout:
         alnout.write(">SS_cons\n%s\n%s" % (struct, aln.toFasta()))
 
-    #shave off info in header for stockholm
+    # shave off info in header for stockholm
     aln = LoadSeqs(data=aln, moltype=RNA,
                    label_to_name=lambda x: x.split()[0])
-    #create stockholm formatted alignment
+    # create stockholm formatted alignment
     sto = stockholm_from_alignment(aln, GC_annotation={'SS_cons': struct})
     del aln
-    #create standard weights for infernal
+    # create standard weights for infernal
     infweights = ""
     for pos in range(0, len(weights), 2):
         infweights = ''.join([infweights, '#=GS %s WT %s\n' %
                              (weights[pos],
                               str(float(weights[pos+1]) / maxweight))])
-    #create weights for r2r
+    # create weights for r2r
     r2r_weights = "#=GF USE_THIS_WEIGHT_MAP " + ' '.join(weights)
-    #create sto file with r2r and std weights
+    # create sto file with r2r and std weights
     sto = sto.split("\n")
     sto[-1] = infweights.strip()
     sto.append(r2r_weights)
@@ -424,9 +426,9 @@ def create_final_output(groupfasta, basefolder, minseqs=1, cpus=1):
     with open(stofile, 'w') as alnout:
         alnout.write('\n'.join(sto))
 
-    #make R2R secondary structure for alignment
+    # make R2R secondary structure for alignment
     make_r2r(stofile, currotufolder, currgroup)
-    #create CM file for infernal from group
+    # create CM file for infernal from group
     cmbuild_from_file(stofile, currotufolder + "/cmfile.cm",
                       params={'--wgiven': True})
     calibrate_cmfile(currotufolder + "/cmfile.cm", cpus=cpus)
@@ -472,7 +474,7 @@ def make_r2r(insto, outfolder, group):
         p = Popen(["r2r", "%s/%s.sto" % outinfo, "%s/%s.pdf" % outinfo],
                   stdout=PIPE)
         retcode = p.wait()
-        #fix known r2r base-pair issue if PDF not created
+        # fix known r2r base-pair issue if PDF not created
         if retcode != 0:
             sto = 0
             with open(outfolder + "/" + group + ".sto", 'U') as fin:
@@ -516,18 +518,18 @@ def calculate_overlap(basefolder, rnd):
     if basefolder[:-1] != "/":
         basefolder += "/"
 
-    #get list of groups
+    # get list of groups
     groups = walk(basefolder).next()[1]
     if "fasta_groups" in groups:
         groups.remove("fasta_groups")
     sizegroups = len(groups)
 
-    #compare all group sequences to other sequences
+    # compare all group sequences to other sequences
     overlapmatrix = empty(shape=(sizegroups, sizegroups), dtype=float)
     overlapmatrix.fill(-1.0)
     for group, gfolder in enumerate(groups):
 
-        #load in headers of current group
+        # load in headers of current group
         headers = set([])
         firstgroup = open("%s%s/R%ihits.fna" % (basefolder, gfolder, rnd))
         for header, seq in MinimalFastaParser(firstgroup):
@@ -535,7 +537,7 @@ def calculate_overlap(basefolder, rnd):
         firstgroup.close()
         groupsize = float(len(headers))
         overlapmatrix[group][group] = 1.0
-        #go through all other groups and compare sequence headers
+        # go through all other groups and compare sequence headers
         for secgroup in range(group+1, sizegroups):
             secgroupfile = "%s%s/R%ihits.fna" % (basefolder, groups[secgroup],
                                                  rnd)
@@ -561,19 +563,19 @@ def create_families(basefolder, rnd, outfile=None, fam_cutoff=0.9):
     for rowpos, row in enumerate(overlap):
         currgroup = groups[rowpos]
         currpos = -1
-        #find position for family with current group, or new family if needed
+        # find position for family with current group, or new family if needed
         for pos, fam in enumerate(families):
             if currgroup in fam:
                 currpos = pos
                 break
         if currpos == -1:
-            #not found so new family
+            # not found so new family
             currpos = len(families)
             families.append(set([groups[rowpos]]))
         for colpos, percent in enumerate(row):
             if percent > fam_cutoff:
                 families[currpos].add(groups[colpos])
-    #turn sets to lists for returning
+    # turn sets to lists for returning
     for pos in range(0, len(families)):
         families[pos] = list(families[pos])
     if outfile is not None:
