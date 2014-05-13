@@ -70,7 +70,7 @@ if __name__ == "__main__":
     if args.minseqs == -1:
         with open(args.i) as fin:
             args.minseqs = int(count_seqs([h for h, s in
-                                           MinimalFastaParser(fin)]) * 0.0001)
+                                           MinimalFastaParser(fin)]) * 0.001)
 
     if basefolder[:-1] != "/":
         basefolder += "/"
