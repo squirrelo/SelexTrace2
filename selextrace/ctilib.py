@@ -5,6 +5,7 @@ from math import ceil
 from random import shuffle
 from multiprocessing import Pool
 from traceback import format_exc
+from collections import defaultdict
 
 from cogent import LoadSeqs, RNA
 from cogent.app.infernal_v11 import (cmsearch_from_file, calibrate_file)
@@ -55,11 +56,10 @@ def write_clusters(clusters, cout):
 def read_clusters(cfo):
     numclusts = int(cfo.readline().strip())
     currclust = ""
-    clusters = {}
+    clusters = defaultdict(list)
     for header, seq in MinimalFastaParser(cfo):
-        if "cluster_" in header:
+        if "cluster" in header:
             currclust = header
-            clusters[currclust] = []
         else:
             clusters[currclust].append((header, seq))
 
@@ -244,7 +244,7 @@ def group(nonref, minscore, ref=None):
     #if ref list is pased, know we are reference grouping
     denovo = False if ref else True
     nogroup = []
-    grouped = {}
+    grouped = defaultdict(list)
 
     #loop through all nonreference items
     for pos, currnonref in enumerate(nonref):
@@ -269,10 +269,7 @@ def group(nonref, minscore, ref=None):
                 bestref = refstruct.name
 
         if bestref:
-            if bestref not in grouped:
-                grouped[bestref] = [currnonref.name]
-            else:
-                grouped[bestref].append(currnonref.name)
+            grouped[bestref].append(currnonref.name)
         elif currnonref.name not in grouped:
             nogroup.append(currnonref)
 
