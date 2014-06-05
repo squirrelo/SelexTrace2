@@ -494,7 +494,7 @@ def run_infernal(cmfile, rnd, seqs, outfolder, cpus=1, score=0.0,
         return
     if not exists(cmfile):
         raise IOError("cmfile path provided does not exist: %s" % cmfile)
-
+    print "run infernal on %s" % cmfile
     params = {'--mid': True, '--Fmid': 0.0002, '--notrunc': True,
               '--toponly': True, '--cpu': cpus}  # '-g': True,
     if calibrate:
