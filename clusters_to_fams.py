@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+# !/usr/bin/env python
 
 __author__ = "Joshua Shorenstein"
 __copyright__ = "Copyright 2014, SelexTrace project"
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     date = str(datetime.now())
     print "Program started ", date
 
-    #print out run info to a file
+    # print out run info to a file
     infofile = open(outfolder + "runparams.txt", 'w')
     infofile.write(''.join(["Program started ", date, "\n",
                             "FASTA file:\t", args.i, "\n",
@@ -94,19 +94,19 @@ if __name__ == "__main__":
     structfile = outfolder + "cluster_structs.fasta"
 
     if exists(structfile):
-        #dont need to do anything since already folded by next step
+        # dont need to do anything since already folded by next step
         print "Sequences previously clustered"
         with open(clustfile) as fin:
             numclusts = int(fin.readline().strip())
     elif exists(clustfile):
-        #already clustered but not folded, so read in clusters
+        # already clustered but not folded, so read in clusters
         with open(clustfile) as fin:
             clusters, numclusts = read_clusters(fin)
 
         print "Sequences previously clustered, %i clusters" % numclusts
     else:
         print "Running uclust over sequences"
-        #cluster the initial sequences by sequence simmilarity
+        # cluster the initial sequences by sequence simmilarity
         clusters = cluster_seqs(args.i, args.sim, folderout=args.o,
                                 gapopen='1.0', gapext='1.0')
         with open(clustfile, 'w') as fout:
@@ -117,18 +117,18 @@ if __name__ == "__main__":
         print "Runtime: %0.2f min" % ((time() - secs)/60)
 
     if not exists(structfile):
-        #create file to write to if not already there
+        # create file to write to if not already there
         with open(structfile, 'w'):
             pass
         print "Running BayesFold over %i clusters" % numclusts
         secs = time()
-        #make a pool of workers, one for each cpu available
+        # make a pool of workers, one for each cpu available
         manager = Manager()
         pool = Pool(processes=args.c)
         lock = manager.Lock()
         with open(clustfile) as fin:
-        #run the pool over all clusters to get file of structures
-            #throw out first line since it has number in it
+            # run the pool over all clusters to get file of structures
+            # throw out first line since it has number in it
             fin.readline()
             currclust = fin.readline().strip(">").strip()
             fin.readline()
@@ -150,7 +150,7 @@ if __name__ == "__main__":
     else:
         print "Clusters previously folded"
 
-    #read in all structures now that they are folded and aligned
+    # read in all structures now that they are folded and aligned
     with open(structfile) as fin:
         seqstructs = create_seqstructs(fin, numclusts)
 
@@ -159,8 +159,8 @@ if __name__ == "__main__":
     if not exists(outfolder + "fasta_groups/"):
         secs = time()
         print "start: %i initial groups" % len(seqstructs)
-        #initial clustering by structures generated in first folding
-        #run the pool over all shape groups to get final grouped structgroups
+        # initial clustering by structures generated in first folding
+        # run the pool over all shape groups to get final grouped structgroups
         grouped = group_by_seqstruct(seqstructs, clustscore, cpus=args.c,
                                      setpercent=0.01)
         del seqstructs
@@ -169,15 +169,15 @@ if __name__ == "__main__":
         print "Align end groups"
 
         secs = time()
-        #collect all structs together and post-process them.
-        #Does final fold and file printout
+        # collect all structs together and post-process them.
+        # Does final fold and file printout
         with open(clustfile) as fin:
             clusters, numclusts = read_clusters(fin)
         mkdir(outfolder + "fasta_groups")
         params = {"-diags": True, "-maxiters": 5}
         pool = Pool(processes=args.c)
-        #need to use fasta string because pycogent sequence collections
-        #HATE multithreading so can't use them
+        # need to use fasta string because pycogent sequence collections
+        # HATE multithreading so can't use them
         for num, ref in enumerate(grouped):
             seqs = clusters[ref]
             fastafolder = outfolder+"/fasta_groups/"
@@ -197,8 +197,8 @@ if __name__ == "__main__":
 
     print "==Creating final groups=="
     secs = time()
-    #smaller pool for memeory savings, 1 task per child to try and gc each run
-    #NEED TO FIX BAYESFOLD ARRAY2D BEING A MEMORY HOG
+    # smaller pool for memeory savings, 1 task per child to try and gc each run
+    # NEED TO FIX BAYESFOLD ARRAY2D BEING A MEMORY HOG
     procs = args.c / 4
     if procs < 1:
         procs = 1
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     if cpus < 1:
         cpus = 1
     pool = Pool(processes=procs, maxtasksperchild=1)
-    #run the pool over all groups to get final structures
+    # run the pool over all groups to get final structures
     for group in walk(outfolder + "fasta_groups").next()[2]:
         pool.apply_async(func=create_final_output,
                          args=(outfolder+"fasta_groups/"+group, outfolder,
@@ -214,7 +214,7 @@ if __name__ == "__main__":
     pool.close()
     pool.join()
 
-    #get sequence counts for each group
+    # get sequence counts for each group
     grouporder = []
     groups = {}
     count = 0
@@ -223,18 +223,18 @@ if __name__ == "__main__":
         if group == "fasta_groups":
             continue
         count += 1
-        #read in group sequence counts
+        # read in group sequence counts
         log = open(outfolder + group + "/log.txt")
         loginfo = log.readlines()
         log.close()
         grouporder.append((group, int(loginfo[1].split()[0]),
                           int(loginfo[2].split()[0])))
-        #read in group structure and build dict for families creation
+        # read in group structure and build dict for families creation
         with open(outfolder + group + "/bayesfold-aln.fasta") as structin:
             struct = structin.readlines()[-2].strip()
         groups[struct] = [group]
 
-    #write out file of sequence counts
+    # write out file of sequence counts
     grouporder.sort(reverse=True, key=lambda x: x[1])
     groupsizefile = open(outfolder + "/group_sizes.txt", 'w')
     groupsizefile.write("Group\tTotal Seqs\tUnique Seqs\n")
@@ -258,14 +258,14 @@ if __name__ == "__main__":
     else:
         raise IOError("Round's fasta file does not exist!")
     for group in groups:
-        #run infernal over current round for all groups
+        # run infernal over current round for all groups
         if group == "fasta_groups":
             continue
         run_infernal("%s%s/cmfile.cm" % (outfolder, group), args.r, seqs,
                      outfolder + group + "/", cpus=args.c, score=args.isc)
     del seqs
 
-    #get families and write out families list
+    # get families and write out families list
     families = create_families(outfolder, args.r, outfile="family_matrix.txt")
     print len(families), "families"
     with open(outfolder + "families.txt", 'w') as fout:
@@ -276,9 +276,9 @@ if __name__ == "__main__":
     fambase = outfolder + "fasta_families/"
     mkdir(fambase)
     for famnum, family in enumerate(families):
-        #combine all seqs for family. Abusing alignment obj for removing gaps
-        #need to use fasta because pycogent addSeqs does not cooperate if not
-        #alignment and all seqs same length
+        # combine all seqs for family. Abusing alignment obj for removing gaps
+        # need to use fasta because pycogent addSeqs does not cooperate if not
+        # alignment and all seqs same length
         famseqs = LoadSeqs("%sfasta_groups/%s.fna" % (outfolder, family[0]),
                            moltype=RNA).degap().toFasta() + "\n"
         for group in family[1:]:
@@ -286,8 +286,8 @@ if __name__ == "__main__":
             if not exists(groupseqsfile):
                 raise IOError("FASTA NOT FOUND: %s" % groupseqsfile)
             famseqs += LoadSeqs(groupseqsfile, moltype=RNA).degap().toFasta()\
-                       + "\n"
-        #fold family sequences
+                + "\n"
+        # fold family sequences
         params = {"-diags": True, "-maxiters": 5}
         align_order_seqs(famseqs, params, fambase, famnum, prefix="fam_")
         create_final_output("%sfam_%i.fna" % (fambase, famnum), outfolder,
@@ -295,24 +295,5 @@ if __name__ == "__main__":
 
     print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
 
-    print "===Running Infernal for families==="
-    print "infernal score cutoff: ", args.isc
-    secs = time()
-    fams = [folder for folder in walk(outfolder).next()[1] if "fam_" in folder]
-    for rnd in range(1, args.r+1):
-        uniques_remain_file = "%sR%i/R%i-Unique-Remaining.fasta" % (basefolder,
-                                                                    rnd, rnd)
-        uniques_file = "%sR%i/R%i-Unique.fasta" % (basefolder, rnd, rnd)
-        if exists(uniques_remain_file):
-            seqs = LoadSeqs(uniques_remain_file, moltype=RNA, aligned=False)
-        elif exists(uniques_file):
-            seqs = LoadSeqs(uniques_file, moltype=RNA, aligned=False)
-        else:
-            raise IOError("Round %i fasta file does not exist!" % rnd)
-        for famfolder in fams:
-            run_infernal("%s/cmfile.cm" % famfolder, rnd, seqs, famfolder,
-                         cpus=args.c, score=args.isc)
-
-    print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
     endtime = (time() - starttime)/3600
     print "Program ended", datetime.now(), " Runtime:", endtime, "hrs"
