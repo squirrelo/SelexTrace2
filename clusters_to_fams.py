@@ -9,7 +9,7 @@ __maintainer__ = "Joshua Shorenstein"
 __email__ = "joshua.shorenstein@colorado.edu"
 __status__ = "Development"
 
-from os.path import exists
+from os.path import exists, join
 from os import mkdir, walk
 import argparse
 from time import time
@@ -24,7 +24,7 @@ from selextrace.ctilib import (fold_clusters, create_final_output,
                                group_by_seqstruct, align_order_seqs,
                                run_infernal, create_families,
                                write_clusters, read_clusters,
-                               create_seqstructs)
+                               create_seqstructs, parse_fams_r2r)
 
 if __name__ == "__main__":
     starttime = time()
@@ -292,6 +292,19 @@ if __name__ == "__main__":
         align_order_seqs(famseqs, params, fambase, famnum, prefix="fam_")
         create_final_output("%sfam_%i.fna" % (fambase, famnum), outfolder,
                             args.minseqs, args.c)
+
+        # use r2r output and map to each group in family
+        with open(join(outfolder, "families.txt")) as fin:
+            fam_groups = []
+            currfam = fin.readline().strip()
+            for line in fin:
+                line = line.strip()
+                if "fam_" in line:
+                    parse_fams_r2r(fam_groups, currfam, cpus=args.c)
+                    currfam = line
+                    fam_groups = []
+                else:
+                    fam_groups.append(line)
 
     print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
 
