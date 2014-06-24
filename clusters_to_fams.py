@@ -47,16 +47,12 @@ if __name__ == "__main__":
         help="Score cutoff for clustering (Default 0.8)")
     parser.add_argument('--isc', type=int, default=80,
         help="Score cutoff for Infernal. (Default 80)")
-    parser.add_argument('--fsc', type=int, default=150,
-        help="Score cutoff for RNAforester. (Default 150)")
     parser.add_argument('-c', type=int, default=1,
         help="Number of CPUs to use (Default 1)")
 
     args = parser.parse_args()
     if args.c < 1:
         raise ValueError("ERROR: CPU count must be at least 1!")
-    if args.fsc < 0:
-        raise ValueError("ERROR: RNAforester score cutoff must be >0!")
     if args.sim <= 0.0 or args.sim > 1.0:
         raise ValueError("ERROR: clustering simmilarity must be > 0 and <= 1!")
     clustscore = args.csc
@@ -66,7 +62,7 @@ if __name__ == "__main__":
     if not exists(basefolder):
         raise IOError("Basefolder does not exist!")
 
-    #calculate minseqs if necessary
+    # calculate minseqs if necessary
     if args.minseqs == -1:
         with open(args.i) as fin:
             args.minseqs = int(count_seqs([h for h, s in
@@ -92,7 +88,6 @@ if __name__ == "__main__":
                             "Min seqs for group:\t", str(args.minseqs), "\n",
                             "Clustering score cutoff:\t", str(args.csc), "\n",
                             "Infernal score cutoff:\t", str(args.isc), "\n",
-                            "RNAforester score cutoff:\t", str(args.fsc), "\n",
                             "CPUs:\t", str(args.c), "\n"]))
     infofile.close()
     print "==Clustering sequences by primary sequence=="
@@ -294,12 +289,6 @@ if __name__ == "__main__":
                 raise IOError("FASTA NOT FOUND: %s" % groupseqsfile)
             famseqs += LoadSeqs(groupseqsfile, moltype=RNA).degap().toFasta()\
                 + "\n"
-        # fold family sequences
-        params = {"-diags": True, "-maxiters": 5}
-        align_order_seqs(famseqs, params, fambase, famnum, prefix="fam_")
-        create_final_output("%sfam_%i.fna" % (fambase, famnum), outfolder,
-                            args.minseqs, args.c)
-
         # use r2r output and map to each group in family
         with open(join(outfolder, "families.txt")) as fin:
             fam_groups = []
@@ -314,6 +303,5 @@ if __name__ == "__main__":
                     fam_groups.append(line)
 
     print "Runtime: %0.2f hrs" % ((time() - secs) / 3600)
-
     endtime = (time() - starttime)/3600
     print "Program ended", datetime.now(), " Runtime:", endtime, "hrs"

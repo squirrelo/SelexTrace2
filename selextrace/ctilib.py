@@ -158,7 +158,7 @@ class SeqStructure(object):
         if self._seqmap is None:
             raise RuntimeError("No seqmap exists!")
         if len(seq) == len(self.struct):
-        # same length so trivial
+            # same length so trivial
             maxscore = self._eval_struct_seq(seq)
         elif len(seq) > len(self.struct):
             # sequence longer than struct so keep slicing sequence
@@ -206,6 +206,7 @@ class SeqStructure(object):
                     score += 1
         return score
 
+
 # object wrapper so create Popen object once: saves DAYS of overhead
 class ScoreStructures(object):
     def __init__(self):
@@ -221,6 +222,7 @@ class ScoreStructures(object):
         # our scoring algorithm
         score = strlen - float(self.p.stdout.readline().strip().split(":")[1])
         return score / strlen
+
     def end(self):
         self.p.stdin.write('@\n')
         self.p.stdin.flush()
@@ -229,6 +231,7 @@ class ScoreStructures(object):
             self.p.kill()
         except:
             pass
+
 
 def build_reference(keys, refsize):
     '''Creates a random list of references refsize long, returning rest as
@@ -288,8 +291,13 @@ def group(nonref, minscore, ref=None):
             # aln, alnsc = nw_align(seq1, seq2, return_score=True)
             # score is normalized by dividing each score by sequence length
             # then adding. This should keep scores between zero and one
-            score = (nwalign_wrapper(seq1, seq2) +
-                     scorestruct(currnonref.struct, refstruct.struct)) / 2
+            align_score = nwalign_wrapper(seq1, seq2)
+            struct_score = currnonref.score_seqstruct(refstruct.struct) / 2
+            if (align_score >= minscore and struct_score >= minscore):
+                score = (align_score + struct_score)
+            else:
+                # disregard as possible match
+                score = -1
             if score > bestscore:
                 bestscore = score
                 bestref = refstruct.name
@@ -298,7 +306,6 @@ def group(nonref, minscore, ref=None):
             grouped[bestref].append(currnonref.name)
         elif currnonref.name not in grouped:
             nogroup.append(currnonref)
-    scorestruct.end()
 
     # make sure all ref in the final grouping dictionary if applicable
     if ref is not None:
@@ -363,8 +370,8 @@ def align_order_seqs(seqs, params, outfolder, num, prefix="group_"):
         aln.Names.sort(reverse=True, key=lambda c: count_seqs(c))
         with open("%s%s%i.fna" % (outfolder, prefix, num), 'w') as fout:
             fout.write(aln.toFasta() + "\n")
-    except Exception, e:
-        print "align_order_seqs ERROR: ", format_exc(e)
+    except Exception as e:
+        print("align_order_seqs ERROR: ", format_exc(e))
 
 
 def create_final_output(groupfasta, basefolder, minseqs=1, cpus=1):
@@ -399,7 +406,7 @@ def create_final_output(groupfasta, basefolder, minseqs=1, cpus=1):
     with open(currotufolder + "/log.txt", 'w') as logout:
         logout.write(' '.join([currgroup, ":\n", str(count),
                      "sequences\n", str(aln.getNumSeqs()),
-                     "unique sequences\nStructure: ", struct, "\n"]))
+                              "unique sequences\nStructure: ", struct, "\n"]))
     # write out alignment and structure in fasta format
     with open(currotufolder + "/bayesfold-aln.fasta", 'w') as alnout:
         alnout.write(">SS_cons\n%s\n%s" % (struct, aln.toFasta()))
@@ -500,8 +507,8 @@ def make_r2r(insto, outfolder, group):
             p = Popen(["r2r", "%s/%s.sto" % outinfo, "%s/%s.pdf" % outinfo],
                       stdout=PIPE)
             p.wait()
-    except Exception, e:
-        print "r2r: ", format_exc(e)
+    except Exception as e:
+        print("r2r: ", format_exc(e))
 
 
 def run_infernal(cmfile, rnd, seqs, outfolder, cpus=1, score=0.0,
@@ -510,18 +517,16 @@ def run_infernal(cmfile, rnd, seqs, outfolder, cpus=1, score=0.0,
         return
     if not exists(cmfile):
         raise IOError("cmfile path provided does not exist: %s" % cmfile)
-    print "run infernal on %s" % cmfile
     params = {'--mid': True, '--Fmid': 0.0002, '--notrunc': True,
-              '--toponly': True, '--cpu': cpus}  #  '-g': True,
+              '--toponly': True, '--cpu': cpus}  # '-g': True,
     if calibrate:
         calibrate_file(cmfile, cpus=cpus)
     result = cmsearch_from_file(cmfile, seqs, RNA, cutoff=score,
                                 params=params)
     with open("%s/R%ihits.fna" % (outfolder, rnd), 'w') as fout:
         for hit in result:
-            fout.write(">%s score:%0.1f e-val:%f\n%s\n" % (hit[0], hit[14],
-                                                           hit[15],
-                                                           seqs.getSeq(hit[0])))
+            fout.write(">%s score:%0.1f e-val:%f\n%s\n" %
+                       (hit[0], hit[14], hit[15], seqs.getSeq(hit[0])))
     if exists("%s/log.txt" % outfolder):
         with open("%s/log.txt" % outfolder, 'a') as fout:
             fout.write("Round %i: %i hits\n" % (rnd, len(result)))

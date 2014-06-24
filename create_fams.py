@@ -50,7 +50,7 @@ if __name__ == "__main__":
         raise IOError("Round's fasta file does not exist!")
     for group in groups:
         # run infernal over current round for all groups
-        if group == "fasta_groups":
+        if group == "fasta_groups" or group == "fasta_families":
             continue
         run_infernal("%s%s/cmfile.cm" % (outfolder, group), args.r, seqs,
                      outfolder + group + "/", cpus=args.c, score=args.isc)
